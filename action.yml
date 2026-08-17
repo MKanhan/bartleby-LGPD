@@ -1,8 +1,6 @@
 name: "Bartleby LGPD gate"
 description: >-
-  Verifica, a cada pull request, se o código de agentes de IA introduziu tratamento de
-  dados pessoais com risco residual acima de um limite — determinístico, sem LLM, sem enviar
-  o código para lugar nenhum. O código nunca sai do runner.
+  Verifica, a cada PR, como aplicações e agentes de IA tratam informação pessoal, à luza da LGPD. Determinístico, sem LLM. O código nunca sai do runner.
 author: "Bartleby"
 branding:
   icon: "shield"
