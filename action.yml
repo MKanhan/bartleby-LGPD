@@ -1,6 +1,6 @@
 name: "Bartleby LGPD gate"
 description: >-
-  Verifica, a cada PR, como aplicações e agentes de IA tratam informação pessoal, à luza da LGPD. Determinístico, sem LLM. O código nunca sai do runner.
+  Verifica, a cada PR, que riscos à LGPD estão sendo disparados pelas aplicações. Determinístico.
 author: "Bartleby"
 branding:
   icon: "shield"
