@@ -51,6 +51,13 @@ bartleby check . --sarif out.sarif  # emite SARIF 2.1.0
 
 Exit codes: `0` passou · `2` fonte/limite inválido · `3` scan vazio · `4` gate reprovou.
 
+## Veja funcionando
+
+Demonstração com o gate rodando num pull request real (agente de IA fictício):
+**[MKanhan/bartleby-gate-demo](https://github.com/MKanhan/bartleby-gate-demo)** →
+[PR #1](https://github.com/MKanhan/bartleby-gate-demo/pull/1) — o gate reprova o PR e anota cada
+achado na linha exata (SARIF / code-scanning).
+
 ## O gate é o alarme; o RIPD é a remediação
 
 Quando o gate acende, gere a documentação completa (RIPD Art. 38 + ROPA Art. 37 + Mapa de Riscos)
