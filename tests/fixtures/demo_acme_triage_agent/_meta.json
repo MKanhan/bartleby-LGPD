@@ -1,0 +1,13 @@
+{
+  "controller": {
+    "razao_social": "ACME Seguros S.A. (FICTÍCIO)",
+    "cnpj": "11.444.777/0001-61",
+    "endereco": "Av. Rio Branco, 1 — 20º andar — Centro, Rio de Janeiro/RJ",
+    "representante_legal": "Operador de Demonstração",
+    "encarregado_nome": "DPO Demo",
+    "encarregado_email": "dpo-demo@acme.example.com.br",
+    "encarregado_telefone": "+55 21 9-0000-0000",
+    "finalidade": "Triagem automatizada de sinistros para encaminhamento à análise humana, com objetivo de reduzir tempo de resposta ao segurado e detectar padrões de fraude antes da liberação financeira.",
+    "contexto": "Agente de IA recebe descrição textual do sinistro + identificação do segurado, consulta histórico (RAG via Pinecone) + dados da apólice, e produz classificação preliminar + recomendação de encaminhamento. Tooling com side-effects: notificação por e-mail, abertura de fila de revisão humana, lookup de status da apólice. Memória curta (24h TTL) por CPF em Redis. Telemetria via LangSmith."
+  }
+}

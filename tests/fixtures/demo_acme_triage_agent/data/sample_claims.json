@@ -1,0 +1,40 @@
+[
+  {
+    "cpf": "111.444.777-35",
+    "nome": "Maria das Couves Silva",
+    "email": "maria.couves@example.com",
+    "telefone": "+55 21 98888-1234",
+    "apolice": "POL-2024-00921",
+    "descricao": "Colisão traseira na Av. Brasil em 12/03/2026"
+  },
+  {
+    "cpf": "529.982.247-25",
+    "nome": "João Pereira Lima",
+    "email": "jpereira@example.com",
+    "telefone": "+55 11 97777-5678",
+    "apolice": "POL-2024-01530",
+    "descricao": "Furto de veículo no estacionamento do shopping"
+  },
+  {
+    "cpf": "390.533.447-05",
+    "nome": "Ana Carolina Mendes",
+    "email": "ana.mendes@example.com",
+    "telefone": "+55 31 96666-9012",
+    "apolice": "POL-2025-00012",
+    "descricao": "Danos por enchente em SP — área alagada por 4 dias"
+  },
+  {
+    "cnpj": "11.444.777/0001-61",
+    "razao_social": "Transportes Couves LTDA",
+    "email_corp": "frota@couves.example.com.br",
+    "apolice": "POL-FROTA-2025-007",
+    "descricao": "Sinistro coletivo de frota em rodovia BR-101"
+  },
+  {
+    "cnpj": "00.000.000/0001-91",
+    "razao_social": "ACME Construtora ME",
+    "email_corp": "contato@acme-construtora.example",
+    "apolice": "POL-2024-04401",
+    "descricao": "Acidente de trabalho com cobertura RCFV"
+  }
+]

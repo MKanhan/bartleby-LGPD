@@ -1,0 +1,56 @@
+name: "Bartleby LGPD gate"
+description: >-
+  Verifica, a cada pull request, se o código de agentes de IA introduziu tratamento de
+  dados pessoais com risco residual acima de um limite — determinístico, sem LLM, sem enviar
+  o código para lugar nenhum. O código nunca sai do runner.
+author: "Bartleby"
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  path:
+    description: "Diretório a analisar (default: raiz do repositório)."
+    required: false
+    default: "."
+  fail-on:
+    description: >-
+      Falha o job quando o pior risco residual atingir este nível:
+      none | baixo | medio | alto | critico. Comece em 'none' para observar sem bloquear.
+    required: false
+    default: "none"
+  sarif:
+    description: >-
+      Caminho do arquivo SARIF 2.1.0 com os achados (para o passo upload-sarif do
+      code-scanning anotar o PR na linha). O arquivo é escrito antes do gate reprovar.
+    required: false
+    default: "bartleby.sarif"
+  python-version:
+    description: "Versão do Python usada para rodar o gate."
+    required: false
+    default: "3.11"
+
+outputs:
+  sarif-file:
+    description: "Caminho do SARIF gerado — passe a github/codeql-action/upload-sarif."
+    value: ${{ inputs.sarif }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Bartleby
+      shell: bash
+      run: python -m pip install --quiet "${{ github.action_path }}"
+
+    - name: Run LGPD gate
+      shell: bash
+      run: >-
+        bartleby check "${{ inputs.path }}"
+        --fail-on "${{ inputs.fail-on }}"
+        --summary-md "$GITHUB_STEP_SUMMARY"
+        --sarif "${{ inputs.sarif }}"

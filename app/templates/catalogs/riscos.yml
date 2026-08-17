@@ -1,0 +1,424 @@
+# Risk catalog — source of truth for the Risk Map generator.
+# Each entry mirrors docs/legal/ai_risk_catalog.md.
+# Triggers:
+#   operations: list of scanner kinds that imply this risk
+#   has_pii: boolean — true if scan emits any PII finding
+#   has_external_provider: boolean — true if any operation has a provider
+#   has_telemetry / has_memory_store / has_vector_store: derived flags
+#   always: boolean — the risk always applies (classical foundation risks)
+# Mitigations:
+#   text (str), probability_reduction (int, default 1), impact_reduction (int, default 0)
+
+risks:
+  - id: AI-001
+    categoria: confidencialidade
+    descricao: Vazamento de PII via prompt para provider externo
+    artigos: [Art. 6º VII, Art. 33-36, Res. 19/2024]
+    probabilidade_baseline: 4
+    impacto_baseline: 4
+    triggers:
+      operations: [invoke_llm, embed]
+      has_external_provider: true
+    mitigacoes:
+      - text: Redaction automática de PII antes de enviar ao LLM
+        probability_reduction: 2
+        impact_reduction: 0
+      - text: DPA + opt-out de treinamento ativado no provider
+        probability_reduction: 1
+        impact_reduction: 0
+      - text: Cláusulas-padrão ANPD anexadas ao contrato
+        probability_reduction: 1
+        impact_reduction: 0
+
+  - id: AI-002
+    categoria: confidencialidade
+    descricao: Reidentificação via embeddings armazenados
+    artigos: [Art. 5º XI, Art. 6º VII]
+    probabilidade_baseline: 3
+    impacto_baseline: 4
+    triggers:
+      operations: [embed, vector_store_write, vector_store_init]
+      has_vector_store: true
+    mitigacoes:
+      - text: Pseudonimização antes da vetorização
+        probability_reduction: 1
+        impact_reduction: 1
+      - text: Controle de acesso granular ao vector store
+        probability_reduction: 1
+        impact_reduction: 0
+
+  - id: AI-003
+    categoria: integridade
+    descricao: Prompt injection / jailbreak levando a exfiltração
+    artigos: [Art. 46, Art. 47]
+    probabilidade_baseline: 4
+    impacto_baseline: 4
+    triggers:
+      operations: [invoke_llm]
+    mitigacoes:
+      - text: Sanitização de inputs e guardrails (filtros antes e depois)
+        probability_reduction: 2
+        impact_reduction: 0
+      - text: Princípio de menor privilégio nas tools e isolamento por usuário
+        probability_reduction: 1
+        impact_reduction: 1
+
+  - id: AI-004
+    categoria: direitos_do_titular
+    descricao: Decisão automatizada sem revisão humana (Art. 20)
+    artigos: [Art. 20, Art. 18]
+    probabilidade_baseline: 3
+    impacto_baseline: 5
+    triggers:
+      operations: [invoke_llm, tool_call]
+    mitigacoes:
+      - text: Canal formal de solicitação de revisão humana
+        probability_reduction: 1
+        impact_reduction: 2
+      - text: Documentação explícita dos critérios aplicados
+        probability_reduction: 1
+        impact_reduction: 0
+
+  - id: AI-005
+    categoria: principios
+    descricao: Discriminação algorítmica (Art. 6º IX)
+    artigos: [Art. 6º IX]
+    probabilidade_baseline: 3
+    impacto_baseline: 4
+    triggers:
+      operations: [invoke_llm]
+    mitigacoes:
+      - text: Testes de viés com equipe multidisciplinar
+        probability_reduction: 1
+        impact_reduction: 1
+      - text: Benchmarks de fairness e monitoramento contínuo
+        probability_reduction: 1
+        impact_reduction: 0
+
+  - id: AI-006
+    categoria: qualidade
+    descricao: Alucinação com efeito sobre titular
+    artigos: [Art. 6º V]
+    probabilidade_baseline: 4
+    impacto_baseline: 3
+    triggers:
+      operations: [invoke_llm]
+    mitigacoes:
+      - text: Validação de saída contra fonte de verdade (grounding via RAG)
+        probability_reduction: 1
+        impact_reduction: 1
+      - text: Revisão humana antes de decisões ou publicações
+        probability_reduction: 1
+        impact_reduction: 1
+
+  - id: AI-007
+    categoria: transparencia
+    descricao: Falta de transparência sobre uso de IA
+    artigos: [Art. 6º VI, Art. 9º, Art. 20]
+    probabilidade_baseline: 4
+    impacto_baseline: 2
+    triggers:
+      operations: [invoke_llm]
+    mitigacoes:
+      - text: Aviso explícito de interação com IA
+        probability_reduction: 2
+        impact_reduction: 0
+      - text: Documentação pública dos critérios gerais
+        probability_reduction: 1
+        impact_reduction: 0
+
+  - id: AI-008
+    categoria: transferencia_internacional
+    descricao: Transferência internacional sem base (Arts. 33-36 + Res. 19/2024)
+    artigos: [Art. 33, Art. 34, Art. 35, Art. 36, Res. 19/2024]
+    probabilidade_baseline: 5
+    impacto_baseline: 3
+    triggers:
+      has_external_provider: true
+    mitigacoes:
+      - text: DPA com cláusulas-padrão ANPD assinadas
+        probability_reduction: 3
+        impact_reduction: 0
+      - text: Avaliação de adequação do país de destino
+        probability_reduction: 1
+        impact_reduction: 0
+
+  - id: AI-009
+    categoria: ciclo_de_vida
+    descricao: Retenção indevida em memória de longo prazo
+    artigos: [Art. 15, Art. 16, Art. 6º III]
+    probabilidade_baseline: 4
+    impacto_baseline: 3
+    triggers:
+      has_memory_store: true
+    mitigacoes:
+      - text: TTL configurado explicitamente e eliminação programática
+        probability_reduction: 2
+        impact_reduction: 0
+      - text: Política de retenção documentada
+        probability_reduction: 1
+        impact_reduction: 0
+
+  - id: AI-010
+    categoria: base_legal
+    descricao: Uso de dados em treinamento sem base legal
+    artigos: [Art. 7º, Art. 11, Art. 6º I]
+    probabilidade_baseline: 3
+    impacto_baseline: 4
+    triggers:
+      has_external_provider: true
+    mitigacoes:
+      - text: Opt-out de treinamento ativado por padrão nos contratos
+        probability_reduction: 2
+        impact_reduction: 0
+      - text: Preferência por tiers enterprise que proíbem treino
+        probability_reduction: 1
+        impact_reduction: 1
+
+  - id: AI-011
+    categoria: seguranca
+    descricao: Logs de observability com PII
+    artigos: [Art. 46]
+    probabilidade_baseline: 5
+    impacto_baseline: 3
+    triggers:
+      has_telemetry: true
+    mitigacoes:
+      - text: Redaction de PII antes de logar
+        probability_reduction: 3
+        impact_reduction: 0
+      - text: ACL nos logs e retenção curta
+        probability_reduction: 1
+        impact_reduction: 1
+
+  - id: AI-012
+    categoria: controle
+    descricao: Function call com efeito colateral em sistemas externos
+    artigos: [Art. 46, Art. 20]
+    probabilidade_baseline: 3
+    impacto_baseline: 4
+    triggers:
+      operations: [tool_call]
+    mitigacoes:
+      - text: Human-in-the-loop para ações sensíveis
+        probability_reduction: 1
+        impact_reduction: 1
+      - text: Allowlist de destinos e ações
+        probability_reduction: 1
+        impact_reduction: 0
+
+  - id: AI-013
+    categoria: confidencialidade
+    descricao: Extração de dados de treinamento (model inversion)
+    artigos: [Art. 46]
+    probabilidade_baseline: 2
+    impacto_baseline: 4
+    triggers:
+      operations: [invoke_llm]
+    mitigacoes:
+      - text: Differential privacy no fine-tuning
+        probability_reduction: 1
+        impact_reduction: 1
+      - text: Redução de overfitting
+        probability_reduction: 0
+        impact_reduction: 1
+
+  - id: AI-014
+    categoria: governanca
+    descricao: Cadeia de operadores opacos (subprocessadores)
+    artigos: [Art. 39, Art. 41]
+    probabilidade_baseline: 4
+    impacto_baseline: 2
+    triggers:
+      has_external_provider: true
+    mitigacoes:
+      - text: Cláusulas contratuais de transparência sobre subprocessamento
+        probability_reduction: 2
+        impact_reduction: 0
+
+  - id: AI-015
+    categoria: governanca
+    descricao: Falta de versionamento do modelo
+    artigos: [Art. 6º V, Art. 50]
+    probabilidade_baseline: 4
+    impacto_baseline: 2
+    triggers:
+      operations: [invoke_llm]
+    mitigacoes:
+      - text: SLA contratual com janela de deprecation e pinning de versão
+        probability_reduction: 2
+        impact_reduction: 0
+
+  - id: AI-016
+    categoria: direitos_do_titular
+    descricao: Inabilidade técnica de atender direito à eliminação
+    artigos: [Art. 18 IV, Art. 18 VI, Art. 16]
+    probabilidade_baseline: 4
+    impacto_baseline: 3
+    triggers:
+      operations: [embed, vector_store_write, vector_store_init, memory_persist]
+      has_vector_store: true
+    mitigacoes:
+      - text: Arquitetura com registro de origem por titular e reprocessamento
+        probability_reduction: 2
+        impact_reduction: 0
+
+  - id: AI-017
+    categoria: populacoes_vulneraveis
+    descricao: Crianças e adolescentes sem verificação de idade (Art. 14)
+    artigos: [Art. 14]
+    probabilidade_baseline: 3
+    impacto_baseline: 5
+    triggers:
+      operations: [invoke_llm]
+    mitigacoes:
+      - text: Age gating e consentimento parental documentado
+        probability_reduction: 1
+        impact_reduction: 2
+
+  - id: AI-018
+    categoria: principios
+    descricao: Dados sensíveis inferidos (Art. 11)
+    artigos: [Art. 5º II, Art. 11, Art. 6º I]
+    probabilidade_baseline: 3
+    impacto_baseline: 4
+    triggers:
+      operations: [invoke_llm]
+    mitigacoes:
+      - text: Classificador de sensibilidade na saída
+        probability_reduction: 1
+        impact_reduction: 1
+
+  # Classical risks (always apply)
+  - id: CL-001
+    categoria: confidencialidade
+    descricao: Acesso não autorizado
+    artigos: [Art. 46]
+    probabilidade_baseline: 3
+    impacto_baseline: 4
+    triggers:
+      always: true
+    mitigacoes:
+      - text: MFA, RBAC e logs de acesso
+        probability_reduction: 1
+        impact_reduction: 1
+
+  - id: CL-002
+    categoria: integridade
+    descricao: Modificação / alteração indevida
+    artigos: [Art. 46]
+    probabilidade_baseline: 2
+    impacto_baseline: 4
+    triggers:
+      always: true
+    mitigacoes:
+      - text: Controle de versão e hash chain em logs
+        probability_reduction: 1
+        impact_reduction: 1
+
+  - id: CL-003
+    categoria: disponibilidade
+    descricao: Perda ou indisponibilidade
+    artigos: [Art. 46]
+    probabilidade_baseline: 3
+    impacto_baseline: 3
+    triggers:
+      always: true
+    mitigacoes:
+      - text: Backup regular e plano de recuperação
+        probability_reduction: 1
+        impact_reduction: 1
+
+  - id: CL-004
+    categoria: confidencialidade
+    descricao: Divulgação / vazamento
+    artigos: [Art. 46, Art. 48]
+    probabilidade_baseline: 3
+    impacto_baseline: 5
+    triggers:
+      always: true
+    mitigacoes:
+      - text: Criptografia em repouso e em trânsito, DLP
+        probability_reduction: 1
+        impact_reduction: 2
+      - text: Plano de comunicação de incidentes
+        probability_reduction: 0
+        impact_reduction: 1
+
+  - id: CL-005
+    categoria: minimizacao
+    descricao: Coleta excessiva
+    artigos: [Art. 6º III]
+    probabilidade_baseline: 4
+    impacto_baseline: 2
+    triggers:
+      has_pii: true
+    mitigacoes:
+      - text: Revisão de campos e princípio da necessidade
+        probability_reduction: 2
+        impact_reduction: 0
+
+  - id: CL-006
+    categoria: finalidade
+    descricao: Desvio de finalidade
+    artigos: [Art. 6º I, Art. 6º II]
+    probabilidade_baseline: 3
+    impacto_baseline: 3
+    triggers:
+      always: true
+    mitigacoes:
+      - text: Política interna e auditoria de uso
+        probability_reduction: 1
+        impact_reduction: 1
+
+  - id: CL-007
+    categoria: base_legal
+    descricao: Tratamento sem base legal
+    artigos: [Art. 7º, Art. 11]
+    probabilidade_baseline: 3
+    impacto_baseline: 4
+    triggers:
+      has_pii: true
+    mitigacoes:
+      - text: Mapeamento de bases e LIA documentado
+        probability_reduction: 2
+        impact_reduction: 0
+
+  - id: CL-008
+    categoria: direitos_do_titular
+    descricao: Violação de direitos do titular
+    artigos: [Art. 18]
+    probabilidade_baseline: 3
+    impacto_baseline: 3
+    triggers:
+      always: true
+    mitigacoes:
+      - text: Canal formal e SLA de atendimento
+        probability_reduction: 1
+        impact_reduction: 1
+
+  - id: CL-009
+    categoria: ciclo_de_vida
+    descricao: Falha de retenção ou eliminação
+    artigos: [Art. 15, Art. 16]
+    probabilidade_baseline: 4
+    impacto_baseline: 2
+    triggers:
+      has_pii: true
+    mitigacoes:
+      - text: Política de retenção e eliminação programática
+        probability_reduction: 2
+        impact_reduction: 0
+
+  - id: CL-010
+    categoria: governanca
+    descricao: Falha na comunicação de incidente
+    artigos: [Art. 48, Res. 15/2024]
+    probabilidade_baseline: 2
+    impacto_baseline: 4
+    triggers:
+      always: true
+    mitigacoes:
+      - text: Plano de resposta e treinamento
+        probability_reduction: 0
+        impact_reduction: 2
