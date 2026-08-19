@@ -47,6 +47,7 @@ pip install bartleby-lgpd
 bartleby check .                    # só relatório
 bartleby check . --fail-on alto     # reprova em Alto/Crítico
 bartleby check . --sarif out.sarif  # emite SARIF 2.1.0
+bartleby check . --scan-out scan.json [--redact]   # exporta o scan (sem enviar o código)
 ```
 
 Exit codes: `0` passou · `2` fonte/limite inválido · `3` scan vazio · `4` gate reprovou.
@@ -62,6 +63,11 @@ achado na linha exata (SARIF / code-scanning).
 
 Quando o gate acende, gere a documentação completa (RIPD Art. 38 + ROPA Art. 37 + Mapa de Riscos)
 com o Bartleby: <https://bartleby.com.br>.
+
+**Sem entregar o repositório.** `bartleby check . --scan-out scan.json` grava o resultado do scan
+num JSON indentado que você lê antes de enviar; `--redact` tira dele qualquer linha de código
+(estrutura, caminhos e severidades ficam — o risco calculado é o mesmo). É esse arquivo, e só ele,
+que o Bartleby precisa para escrever os documentos.
 
 ---
 Este pacote é derivado automaticamente do produto Bartleby. Licença MIT.

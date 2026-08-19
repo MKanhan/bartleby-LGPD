@@ -7,6 +7,11 @@ This module is shared by two CLIs:
 Keep it free of any analyze/LLM/generator/license import — importing this module must stay light
 (only scanner + risk_engine + gate). The check UX lives here so it never drifts between the free
 and paid builds. See `specs/62_opencore_gate_carveout.md`.
+
+`--scan-out` exports the scan artifact (`app/scanner/artifact.py`): the free side of the
+"documents without the source" path — the client keeps the repository and sends one auditable
+JSON. Exporting stays offline and license-free; only `analyze` (paid) consumes it. See
+`specs/63_scan_artifact_no_source.md`.
 """
 
 from __future__ import annotations
@@ -27,6 +32,9 @@ from app.gate import (
     to_sarif,
 )
 from app.scanner import scan_directory
+from app.scanner.artifact import build as build_artifact
+from app.scanner.artifact import redact
+from app.scanner.artifact import write_file as write_artifact
 from app.scanner.coverage import is_scan_empty
 from app.scanner.ingest import UnsafeGitUrlError, ingest_git, ingest_zip, validate_git_url
 
@@ -100,22 +108,33 @@ def run_check(args: argparse.Namespace) -> int:
         with open(args.sarif, "w", encoding="utf-8") as fh:
             json.dump(sarif, fh, ensure_ascii=False, indent=2)
 
-    if args.json:
-        print(
-            json.dumps(
-                {
-                    "framework": scan.agent_framework,
-                    "operations": len(scan.operations),
-                    "pii_findings": len(scan.pii_findings),
-                    "counts": result.counts,
-                    "total": result.total,
-                    "worst": result.worst,
-                    "threshold": result.threshold,
-                    "breached": result.breached,
-                },
-                ensure_ascii=False,
-            )
+    # The scan artifact: everything the paid pipeline needs to write the RIPD/ROPA/Mapa, and
+    # nothing else — so a team can buy the documents without ever shipping the repository.
+    # Still free, still offline: exporting is a file write, not a call home.
+    if getattr(args, "scan_out", None):
+        exported = redact(scan) if getattr(args, "redact", False) else scan
+        write_artifact(
+            args.scan_out,
+            build_artifact(
+                exported, source_label=args.source, redacted=bool(getattr(args, "redact", False))
+            ),
         )
+
+    if args.json:
+        payload = {
+            "framework": scan.agent_framework,
+            "operations": len(scan.operations),
+            "pii_findings": len(scan.pii_findings),
+            "counts": result.counts,
+            "total": result.total,
+            "worst": result.worst,
+            "threshold": result.threshold,
+            "breached": result.breached,
+        }
+        if getattr(args, "scan_out", None):
+            payload["scan_out"] = str(args.scan_out)
+            payload["redacted"] = bool(getattr(args, "redact", False))
+        print(json.dumps(payload, ensure_ascii=False))
     else:
         print(f"Bartleby — gate LGPD ({scan.agent_framework})")
         print(f"  Operações : {len(scan.operations)}")
@@ -123,6 +142,9 @@ def run_check(args: argparse.Namespace) -> int:
         print(f"  Riscos    : {result.total}  (pior severidade: {result.worst or '—'})")
         for lvl in ("Crítico", "Alto", "Médio", "Baixo"):
             print(f"    {lvl:8s} {result.counts[lvl]}")
+        if getattr(args, "scan_out", None):
+            marca = " (redigido)" if getattr(args, "redact", False) else ""
+            print(f"  Artefato  : {args.scan_out}{marca}")
         if result.breached:
             print(
                 f"  GATE      : FALHOU — risco {result.worst} ≥ limite {result.threshold}",
@@ -159,5 +181,18 @@ def add_check_subcommand(sub: argparse._SubParsersAction) -> None:
         default=None,
         help="escreve os achados em SARIF 2.1.0 neste arquivo "
         "(o GitHub code-scanning anota o PR na linha exata)",
+    )
+    ck.add_argument(
+        "--scan-out",
+        dest="scan_out",
+        default=None,
+        help="exporta o resultado do scan (JSON) neste arquivo — é o que o Bartleby precisa "
+        "para gerar RIPD/ROPA/Mapa sem receber o código-fonte",
+    )
+    ck.add_argument(
+        "--redact",
+        action="store_true",
+        help="no artefato exportado, remove as linhas de código (mantém estrutura, caminhos e "
+        "severidade; não altera o risco calculado)",
     )
     ck.add_argument("--json", action="store_true", help="imprime o resultado em JSON")

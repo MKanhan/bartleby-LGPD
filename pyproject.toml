@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bartleby-lgpd"
-version = "1.0.0"
+version = "1.1.0"
 description = "Bartleby — gate de LGPD para agentes de IA: linter estático que roda no CI, sem LLM."
 requires-python = ">=3.11"
 authors = [{ name = "Marcelo Kanhan" }]

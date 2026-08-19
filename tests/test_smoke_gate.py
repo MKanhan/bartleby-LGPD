@@ -31,3 +31,19 @@ def test_sarif_tem_regra_ai(tmp_path):
     data = json.loads(out.read_text(encoding="utf-8"))
     rule_ids = [r["ruleId"] for r in data["runs"][0]["results"]]
     assert any(rid.startswith("AI-") for rid in rule_ids)
+
+
+def test_scan_out_exporta_artefato(tmp_path):
+    out = tmp_path / "scan.json"
+    assert _run("--scan-out", str(out)).returncode == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["format"] == "bartleby.scan/1"
+    assert data["scan"]["operations"]
+
+
+def test_redact_tira_o_codigo(tmp_path):
+    out = tmp_path / "scan.json"
+    assert _run("--scan-out", str(out), "--redact").returncode == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["redacted"] is True
+    assert all(op["snippet"] == "" for op in data["scan"]["operations"])
