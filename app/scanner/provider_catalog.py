@@ -151,6 +151,7 @@ class Catalog(BaseModel):
     call_methods: dict[str, list[str]]
     call_model_pos: dict[str, int] = Field(default_factory=dict)
     call_model_origin: dict[str, str] = Field(default_factory=dict)
+    call_stores_data: dict[str, str] = Field(default_factory=dict)
     propagating_methods: list[str]
     propagating_callees: list[str]
     routers: Routers = Field(default_factory=Routers)
@@ -335,6 +336,15 @@ def call_model_origin(attr_path: str) -> str | None:
     for prefix, origin in load_catalog().call_model_origin.items():
         if f".{prefix}." in dotted:
             return origin
+    return None
+
+
+def call_stores_data(attr_path: str) -> str | None:
+    """What a call keeps at the provider (spec 76: Assistants threads hold the conversation)."""
+    dotted = f".{attr_path}."
+    for prefix, what in load_catalog().call_stores_data.items():
+        if f".{prefix}." in dotted:
+            return what
     return None
 
 

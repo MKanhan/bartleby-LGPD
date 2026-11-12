@@ -1,0 +1,21 @@
+# Linguagens de programação que o scanner NÃO lê (spec 76). Ele lê Python e JavaScript/TypeScript.
+# Quando o código de produto tem arquivos destas extensões, o documento avisa que essa parte do
+# sistema não foi analisada. Não é achado: o aviso cobre o silêncio, não o conteúdo.
+# Linguagem nova é uma linha aqui.
+
+linguagens:
+  Java: [.java]
+  Kotlin: [.kt, .kts]
+  Go: [.go]
+  "C#": [.cs]
+  Ruby: [.rb]
+  PHP: [.php]
+  Rust: [.rs]
+  Swift: [.swift]
+  Scala: [.scala]
+  Dart: [.dart]
+  Elixir: [.ex, .exs]
+  "C/C++": [.c, .cc, .cpp, .h, .hpp]
+
+# Pastas de dependência ou de saída de build, que não são código do produto.
+pastas_ignoradas: [.git, .venv, venv, __pycache__, node_modules, dist, build, .next, vendor, target, bin, obj, Pods]

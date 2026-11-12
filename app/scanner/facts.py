@@ -218,6 +218,22 @@ def unresolved_facts(ops: list[Operation]) -> list[str]:
     return out
 
 
+def provider_storage(ops: list[Operation]) -> list[str]:
+    """Spec 76: what the code keeps at a provider, by a call that stores it there (an Assistants
+    thread holds the conversation). One line per provider and kind of data, with the places."""
+    places: dict[tuple[str, str], list[str]] = {}
+    for op in ops:
+        stored = op.extra.get("guarda_no_provedor")
+        if stored and op.provider:
+            places.setdefault((pc.display_name(str(op.provider)), str(stored)), []).append(
+                f"{op.file}:{op.line}"
+            )
+    return [
+        f"{name} guarda {what} — {', '.join(where[:3])}{' e outros' if len(where) > 3 else ''}"
+        for (name, what), where in sorted(places.items())
+    ]
+
+
 def candidate_providers(scan: ScanOutput) -> set[str]:
     """Spec 73: providers the code lists in a table of addresses and picks at run time. They are
     options, not facts: nothing here is claimed."""
@@ -352,6 +368,8 @@ HEADLINE = (
 
 UNREAD_PREFIX = "O scanner não conseguiu ler"
 UNREAD_SHOWN = 10
+# spec 76: product code in a language the scanner does not read. Names no fact and presumes no AI.
+UNREAD_LANGUAGE_PREFIX = "O repositório tem código em linguagem que o scanner não lê"
 
 
 @dataclass
@@ -472,6 +490,15 @@ def coverage_state(scan: ScanOutput) -> CoverageState:
         alerts.append(
             f"{UNREAD_PREFIX} {len(unread)} arquivo(s) Python por erro de sintaxe; o que eles "
             f"fazem não entra nesta análise: {shown}{more}."
+        )
+    languages: dict[str, int] = scan.raw_facts.get("linguagens_nao_lidas") or {}
+    if languages:
+        counts = [
+            f"{n} {'arquivo' if n == 1 else 'arquivos'} em {name}" for name, n in languages.items()
+        ]
+        listed = ", ".join(counts[:-1]) + " e " + counts[-1] if len(counts) > 1 else counts[0]
+        alerts.append(
+            f"{UNREAD_LANGUAGE_PREFIX}: {listed}. O que esse código faz não está neste documento."
         )
     ai_without_call = not has_llm and ai_signs
     if ai_without_call:

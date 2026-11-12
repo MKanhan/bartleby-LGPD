@@ -650,6 +650,9 @@ class ModuleLLM:
         extra: dict[str, Any] = dict(receiver.marks)
         if method.endswith("audio.transcriptions.create"):
             extra["modalidade"] = "audio"
+        stored = pc.call_stores_data(method)
+        if stored:
+            extra["guarda_no_provedor"] = stored
         return self._make_op(
             call,
             receiver.provider,

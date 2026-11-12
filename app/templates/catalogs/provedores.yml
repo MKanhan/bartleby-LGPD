@@ -430,6 +430,12 @@ call_model_pos:
 
 # Chamadas em que o modelo não é argumento porque fica guardado no provedor (spec 75). Prefixo do
 # atributo → o que o documento diz sobre a origem do modelo quando ele não está na chamada.
+# Chamadas que guardam dado no provedor (spec 76). Prefixo do atributo → o que fica guardado. O
+# documento diz que há armazenamento no provedor; o prazo é do contrato, não do código.
+call_stores_data:
+  beta.threads: "conversas (API de Assistants)"
+  beta.assistants: "instruções e arquivos do assistente (API de Assistants)"
+
 call_model_origin:
   beta.threads: "definido no assistente configurado no provedor (API de Assistants)"
   beta.assistants: "definido no assistente configurado no provedor (API de Assistants)"
@@ -444,6 +450,12 @@ call_methods:
     - responses.create
     - messages.create
     - messages.stream
+    # API de Assistants: executar o assistente é a chamada ao modelo (spec 76)
+    - threads.runs.create
+    - threads.runs.create_and_poll
+    - threads.runs.stream
+    - threads.create_and_run
+    - threads.create_and_run_poll
     - generate_content
     - generate_content_stream
     - models.generate_content

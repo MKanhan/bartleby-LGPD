@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.scanner import store_catalog
+from app.scanner import store_catalog, unread_languages
 from app.scanner.ai_signals import collect as collect_ai_signals
 from app.scanner.config_scan import scan_config
 from app.scanner.context import context_of
@@ -88,6 +88,8 @@ def scan_directory(root: Path) -> ScanOutput:
     out.raw_facts["files_scanned_py"] = len(py_files)
     out.raw_facts["arquivos_nao_lidos"] = sorted(f for f in index.unparsed if not context_of(f))
     out.raw_facts["files_scanned_js"] = len(js_files)
+    # spec 76: product code in a language the scanner does not read is said, not skipped in silence
+    out.raw_facts["linguagens_nao_lidas"] = unread_languages.count(root)
 
     for op in out.operations:
         context = context_of(op.file)

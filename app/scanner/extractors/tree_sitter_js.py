@@ -1441,6 +1441,7 @@ class _FileJS:
                 else:
                     model, model_origin = client.model, client.model_origin
                 elsewhere = pc.call_model_origin(callee.split(".", 1)[1])
+                stored = pc.call_stores_data(callee.split(".", 1)[1])
                 if model is None and elsewhere and model_node is None:
                     model_origin = elsewhere
                 if model is None and model_origin is None:
@@ -1453,7 +1454,11 @@ class _FileJS:
                     model,
                     model_origin,
                     "chamada",
-                    marks=client.marks,
+                    marks=(
+                        {**(client.marks or {}), "guarda_no_provedor": stored}
+                        if stored
+                        else client.marks
+                    ),
                 )
                 return
 
