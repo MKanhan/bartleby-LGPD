@@ -1,9 +1,11 @@
-"""Extractors for vector stores, memory stores, and telemetry libraries.
+"""Extractors for vector stores, memory stores, and telemetry libraries (Python).
 
-Matching is driven by which libraries are imported in the file, not by bare
-symbol names — "Client" alone is ambiguous between LangSmith, Chroma, Qdrant,
-and a dozen others. The scanner tracks `from X import Y` bindings and only
-classifies calls whose library of origin is a known LGPD-relevant integration.
+Matching is driven by which libraries are imported in the file, not by bare symbol names —
+"Client" alone is ambiguous between LangSmith, Chroma, Qdrant and a dozen others. Since spec 69
+the libraries come from the catalogs, never from a table in code: memory and telemetry from
+`integracoes.yml`, vector stores from `armazenamentos.yml` (the same entries `datastores.py`
+reads). A call to a name imported from a catalog module is the integration; a later
+`receiver.method(...)` on what that call returned becomes a write/read operation.
 """
 
 from __future__ import annotations
@@ -12,43 +14,22 @@ import ast
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.scanner import integration_catalog as ic
+from app.scanner import store_catalog as sc
 from app.scanner.schema import Operation
 
-# (module_prefix, symbol) → (kind, provider)
-_LIBRARY_SYMBOLS: dict[tuple[str, str], tuple[str, str]] = {
-    # vector stores
-    ("pinecone", "Pinecone"): ("vector_store_init", "pinecone"),
-    ("weaviate", "Client"): ("vector_store_init", "weaviate"),
-    ("qdrant_client", "QdrantClient"): ("vector_store_init", "qdrant"),
-    ("chromadb", "Client"): ("vector_store_init", "chroma"),
-    ("chromadb", "PersistentClient"): ("vector_store_init", "chroma"),
-    ("faiss", "IndexFlatL2"): ("vector_store_init", "faiss"),
-    ("faiss", "IndexFlatIP"): ("vector_store_init", "faiss"),
-    # memory stores
-    ("redis", "Redis"): ("memory_persist", "redis"),
-    ("redis", "StrictRedis"): ("memory_persist", "redis"),
-    ("redis.asyncio", "Redis"): ("memory_persist", "redis_asyncio"),
-    ("langchain.memory", "ConversationBufferMemory"): ("memory_persist", "langchain"),
-    ("langchain_community.chat_message_histories", "RedisChatMessageHistory"): (
-        "memory_persist",
-        "langchain_redis",
-    ),
-    # telemetry
-    ("langsmith", "Client"): ("telemetry", "langsmith"),
-    ("langfuse", "Langfuse"): ("telemetry", "langfuse"),
-    ("langsmith.run_helpers", "traceable"): ("telemetry", "langsmith"),
-    ("langfuse.decorators", "observe"): ("telemetry", "langfuse"),
-}
-
-# method_name → (kind, provider_guess_when_library_known)
+# method on a known receiver -> (operation kind, category it is valid for)
 _METHOD_OPERATIONS: dict[str, tuple[str, str]] = {
-    "upsert": ("vector_store_write", "vector_store"),
-    "query": ("vector_store_read", "vector_store"),
-    "search": ("vector_store_read", "vector_store"),
-    "add": ("vector_store_write", "vector_store"),
-    "hset": ("memory_persist", "redis"),
-    "hget": ("memory_persist", "redis"),
-    "set": ("memory_persist", "redis"),
+    "upsert": ("vector_store_write", "vector"),
+    "add": ("vector_store_write", "vector"),
+    "add_documents": ("vector_store_write", "vector"),
+    "add_texts": ("vector_store_write", "vector"),
+    "query": ("vector_store_read", "vector"),
+    "search": ("vector_store_read", "vector"),
+    "similarity_search": ("vector_store_read", "vector"),
+    "hset": ("memory_persist", "memory"),
+    "hget": ("memory_persist", "memory"),
+    "set": ("memory_persist", "memory"),
 }
 
 
@@ -76,134 +57,106 @@ def _attr_dotted(node: ast.AST) -> str | None:
     return ".".join(reversed(parts))
 
 
-def _collect_bindings(tree: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
-    """Return (name_to_library, call_target_to_library) maps for this module.
+def _collect_bindings(tree: ast.AST) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
+    """(imported name -> (module, original name), module alias -> module).
 
-    - name_to_library: `from redis import Redis as R` → {"R": "redis"}
-    - aliased_modules: `import redis` → {"redis": "redis"}; `import redis as r` → {"r": "redis"}
+    `from redis import Redis as R` -> {"R": ("redis", "Redis")}; `import redis.asyncio` binds
+    `redis` (Python binds the top-level name); `import redis.asyncio as r` binds `r` to the full path.
     """
-    symbol_library: dict[str, str] = {}
-    module_alias: dict[str, str] = {}
-
+    symbols: dict[str, tuple[str, str]] = {}
+    modules: dict[str, str] = {}
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            module = node.module or ""
+        if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
             for alias in node.names:
-                imported_name = alias.asname or alias.name
-                symbol_library[imported_name] = module
+                symbols[alias.asname or alias.name] = (node.module, alias.name)
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                alias_name = alias.asname or alias.name.split(".")[0]
-                module_alias[alias_name] = alias.name.split(".")[0]
+                if alias.asname:
+                    modules[alias.asname] = alias.name
+                else:
+                    top = alias.name.split(".")[0]
+                    modules[top] = top
+    return symbols, modules
 
-    return symbol_library, module_alias
+
+def _category(kind: str) -> str:
+    if kind.startswith("vector"):
+        return "vector"
+    return "memory" if kind == "memory_persist" else "telemetry"
 
 
-def _classify_call(
-    call: ast.Call,
-    symbol_library: dict[str, str],
-    module_alias: dict[str, str],
-) -> tuple[str, str, str] | None:
-    """Return (category, kind, provider) for a call, or None.
-
-    category ∈ {"vector", "memory", "telemetry"}.
-    """
-    func = call.func
+def _resolve(
+    func: ast.expr, symbols: dict[str, tuple[str, str]], modules: dict[str, str]
+) -> tuple[str, str] | None:
+    """(module, name) a call target comes from, when it comes from an import."""
     if isinstance(func, ast.Name):
-        module = symbol_library.get(func.id)
-        if module is None:
-            return None
-        hit = _LIBRARY_SYMBOLS.get((module, func.id))
-        if hit is None:
-            return None
-        kind, provider = hit
-        category = _category_of_kind(kind)
-        return (category, kind, provider)
-
-    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-        mod_alias = module_alias.get(func.value.id)
-        if mod_alias is not None:
-            hit = _LIBRARY_SYMBOLS.get((mod_alias, func.attr))
-            if hit is not None:
-                kind, provider = hit
-                return (_category_of_kind(kind), kind, provider)
-
+        return symbols.get(func.id)
+    dotted = _attr_dotted(func) if isinstance(func, ast.Attribute) else None
+    if not dotted or "." not in dotted:
+        return None
+    head, *middle, name = dotted.split(".")
+    if head in modules:
+        return ".".join([modules[head], *middle]), name
+    if head in symbols:  # from langchain_community import chat_message_histories as h
+        module, original = symbols[head]
+        return ".".join([module, original, *middle]), name
     return None
 
 
-def _category_of_kind(kind: str) -> str:
-    if kind.startswith("vector"):
-        return "vector"
-    if kind.startswith("memory"):
-        return "memory"
-    return "telemetry"
-
-
-def _method_call_for_known_receiver(
-    call: ast.Call,
-    receiver_origins: dict[str, str],
-) -> tuple[str, str, str] | None:
-    """Classify a `receiver.method(...)` call when we know the receiver's library."""
-    func = call.func
-    if not isinstance(func, ast.Attribute):
+def _classify(
+    call: ast.Call, symbols: dict[str, tuple[str, str]], modules: dict[str, str]
+) -> tuple[str, str] | None:
+    """(operation kind, integration or store id) for a call into a catalog library, or None."""
+    target = _resolve(call.func, symbols, modules)
+    if target is None:
         return None
-    receiver_name = None
-    if isinstance(func.value, ast.Name):
-        receiver_name = func.value.id
-    elif isinstance(func.value, ast.Attribute) and isinstance(func.value.value, ast.Name):
-        receiver_name = func.value.value.id
-    if receiver_name is None:
-        return None
-    origin = receiver_origins.get(receiver_name)
-    if origin is None:
-        return None
-    method_hit = _METHOD_OPERATIONS.get(func.attr)
-    if method_hit is None:
-        return None
-    kind, fallback_provider = method_hit
-    provider = origin
-    return (_category_of_kind(kind), kind, provider)
+    module, name = target
+    if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
+        owner = symbols.get(call.func.value.id)
+        if owner is not None:  # a class method builds the class: AsyncMemory.from_config(...)
+            module, name = owner
+    integration = ic.python_symbol(module, name)
+    if integration is not None:
+        return integration.kind, integration.id
+    store = sc.python_class(module, name) or sc.python_module(module)
+    if store is not None and store.is_vector:
+        return "vector_store_init", store.id
+    return None
 
 
 def _learn_assignments(
-    tree: ast.AST,
-    symbol_library: dict[str, str],
-    module_alias: dict[str, str],
-) -> dict[str, str]:
-    """Map local variable names to a provider, propagating through chained calls."""
-    origins: dict[str, str] = {}
-
+    tree: ast.AST, symbols: dict[str, tuple[str, str]], modules: dict[str, str]
+) -> dict[str, tuple[str, str]]:
+    """Local name -> (kind, id) of the integration it holds, through chained calls."""
+    origins: dict[str, tuple[str, str]] = {}
     assigns = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)]
-
-    for _ in range(3):  # fixed-point iterations are cheap on small modules
+    for _ in range(3):  # fixed point; modules are small
         grew = False
         for node in assigns:
-            provider = _infer_rhs_provider(node.value, symbol_library, module_alias, origins)
-            if provider is None:
+            hit = _rhs_origin(node.value, symbols, modules, origins)
+            if hit is None:
                 continue
             for target in node.targets:
-                if isinstance(target, ast.Name) and origins.get(target.id) != provider:
-                    origins[target.id] = provider
+                if isinstance(target, ast.Name) and origins.get(target.id) != hit:
+                    origins[target.id] = hit
                     grew = True
         if not grew:
             break
-
     return origins
 
 
-def _infer_rhs_provider(
+def _rhs_origin(
     node: ast.AST,
-    symbol_library: dict[str, str],
-    module_alias: dict[str, str],
-    origins: dict[str, str],
-) -> str | None:
+    symbols: dict[str, tuple[str, str]],
+    modules: dict[str, str],
+    origins: dict[str, tuple[str, str]],
+) -> tuple[str, str] | None:
     if isinstance(node, ast.Call):
-        direct = _classify_call(node, symbol_library, module_alias)
+        direct = _classify(node, symbols, modules)
         if direct is not None:
-            return direct[2]
-        func = node.func
-        if isinstance(func, ast.Attribute):
-            base = _base_name(func)
+            return direct
+        if isinstance(node.func, ast.Attribute):
+            base = _base_name(node.func)
             if base is not None:
                 return origins.get(base)
     elif isinstance(node, ast.Attribute):
@@ -217,9 +170,24 @@ def _base_name(attr: ast.Attribute) -> str | None:
     cur: ast.AST = attr
     while isinstance(cur, ast.Attribute):
         cur = cur.value
-    if isinstance(cur, ast.Name):
-        return cur.id
-    return None
+    return cur.id if isinstance(cur, ast.Name) else None
+
+
+def _method_on_receiver(
+    call: ast.Call, origins: dict[str, tuple[str, str]]
+) -> tuple[str, str] | None:
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return None
+    base = _base_name(func)
+    origin = origins.get(base) if base else None
+    method = _METHOD_OPERATIONS.get(func.attr)
+    if origin is None or method is None:
+        return None
+    kind, valid_for = method
+    if _category(origin[0]) != valid_for:
+        return None
+    return kind, origin[1]
 
 
 def analyze_integrations(path: Path, root: Path) -> _IntegrationFacts:
@@ -231,30 +199,12 @@ def analyze_integrations(path: Path, root: Path) -> _IntegrationFacts:
 
     rel = path.relative_to(root).as_posix()
     facts = _IntegrationFacts()
+    symbols, modules = _collect_bindings(tree)
+    origins = _learn_assignments(tree, symbols, modules)
 
-    symbol_library, module_alias = _collect_bindings(tree)
-    receiver_origins = _learn_assignments(tree, symbol_library, module_alias)
-
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-
-        direct = _classify_call(node, symbol_library, module_alias)
-        if direct is not None:
-            category, kind, provider = direct
-        else:
-            indirect = _method_call_for_known_receiver(node, receiver_origins)
-            if indirect is None:
-                continue
-            category, kind, provider = indirect
-
-        op = Operation(
-            kind=kind,
-            provider=provider,
-            file=rel,
-            line=node.lineno,
-            extra={"symbol": _attr_dotted(node.func) or "?"},
-        )
+    def add(kind: str, provider: str, line: int, symbol: str) -> None:
+        op = Operation(kind=kind, provider=provider, file=rel, line=line, extra={"symbol": symbol})
+        category = _category(kind)
         if category == "vector":
             facts.vector_ops.append(op)
         elif category == "memory":
@@ -262,4 +212,14 @@ def analyze_integrations(path: Path, root: Path) -> _IntegrationFacts:
         else:
             facts.telemetry_ops.append(op)
 
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            hit = _classify(node, symbols, modules) or _method_on_receiver(node, origins)
+            if hit is not None:
+                add(hit[0], hit[1], node.lineno, _attr_dotted(node.func) or "?")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            # an env switch the code reads or sets (os.environ["LANGSMITH_TRACING"] = "true")
+            integration = ic.by_env(node.value)
+            if integration is not None:
+                add(integration.kind, integration.id, node.lineno, f"variável {node.value}")
     return facts

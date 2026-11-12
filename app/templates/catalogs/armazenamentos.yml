@@ -1,0 +1,232 @@
+# Catálogo de armazenamentos — onde os dados ficam (spec 65). Fonte única para o scanner Python e JS.
+#
+#   tipo           relacional | documento | vetorial | chave-valor | objeto
+#   local          true = arquivo ou processo na máquina do controlador
+#   python.modulos import que, sozinho, já prova o uso (ex.: sqlite3)
+#   python.classes classe construída a partir de um módulo (ex.: Chroma do langchain_chroma);
+#                  com `requer`, só vale com aquele argumento (boto3.client("dynamodb")) — spec 73
+#   url            esquemas de URL de conexão literal (sqlite:///, postgresql://)
+#   django         valor de DATABASES['default']['ENGINE']
+#   js.pacotes     pacote importado (também prefixos como drizzle-orm/postgres-js)
+#   config         valor de "provider" num dict de configuração de vector store (ex.: mem0)
+#   wrangler       seção de array do wrangler.toml que declara o recurso (ex.: [[vectorize]])
+#   prisma         valor de `provider` no datasource de um schema.prisma (spec 73)
+#   sql            regex de SQL que prova o banco, em arquivo .sql ou em string do código
+#   js.globais     função injetada sem import (NuxtHub: hubDatabase()), com o pacote que a fornece
+#
+# Redis fica fora de propósito: é memória de sessão (memory_persist), não armazenamento.
+# sqlalchemy/sqlmodel/prisma sozinhos não dizem o banco; só a URL ou o dialeto dizem.
+
+# Métodos de classe que constroem o banco (Chroma.from_documents(...)): valem como o construtor.
+construtores: [from_documents, from_texts, from_existing_index, from_embeddings, from_params, from_client, from_connection_string]
+
+stores:
+  - id: sqlite
+    nome: SQLite
+    tipo: relacional
+    local: true
+    python:
+      modulos: [sqlite3, aiosqlite]
+    url: [sqlite]
+    django: [django.db.backends.sqlite3]
+    prisma: [sqlite]
+    js:
+      pacotes: [better-sqlite3, sqlite3, sqlite, "@libsql/client", drizzle-orm/better-sqlite3, drizzle-orm/libsql]
+
+  - id: postgres
+    nome: PostgreSQL
+    tipo: relacional
+    python:
+      modulos: [psycopg, psycopg2, psycopg_pool, asyncpg, langgraph.checkpoint.postgres, langgraph.checkpoint.postgres.aio]
+    url: [postgres, postgresql, "postgresql+psycopg", "postgresql+psycopg2", "postgresql+asyncpg"]
+    django: [django.db.backends.postgresql, django.db.backends.postgresql_psycopg2]
+    prisma: [postgresql, postgres, cockroachdb]
+    js:
+      pacotes: [pg, postgres, "@neondatabase/serverless", "@vercel/postgres", drizzle-orm/postgres-js, drizzle-orm/node-postgres, drizzle-orm/neon-http, drizzle-orm/neon-serverless, drizzle-orm/vercel-postgres]
+
+  - id: mysql
+    nome: MySQL
+    tipo: relacional
+    python:
+      modulos: [pymysql, mysql.connector, MySQLdb, aiomysql]
+    url: [mysql, "mysql+pymysql", "mysql+mysqldb"]
+    django: [django.db.backends.mysql]
+    prisma: [mysql]
+    js:
+      pacotes: [mysql, mysql2, drizzle-orm/mysql2]
+
+  - id: mongodb
+    nome: MongoDB
+    tipo: documento
+    python:
+      modulos: [pymongo, motor, mongoengine, beanie]
+    url: [mongodb, "mongodb+srv"]
+    prisma: [mongodb]
+    js:
+      pacotes: [mongodb, mongoose]
+
+  - id: d1
+    nome: Cloudflare D1
+    tipo: relacional
+    wrangler: [d1_databases]
+    js:
+      pacotes: [langchain/stores/message/cloudflare_d1, "@langchain/cloudflare", drizzle-orm/d1]
+      globais:
+        - {chamada: hubDatabase, pacote: "@nuxthub/core"}
+
+  - id: supabase
+    nome: Supabase (PostgreSQL gerenciado)
+    tipo: relacional
+    python:
+      modulos: [supabase]
+    js:
+      pacotes: ["@supabase/supabase-js"]
+
+  - id: shelve
+    nome: shelve (arquivo local do Python)
+    tipo: chave-valor
+    local: true
+    python:
+      modulos: [shelve]
+
+  - id: tinydb
+    nome: TinyDB (arquivo JSON local)
+    tipo: documento
+    local: true
+    python:
+      modulos: [tinydb]
+
+  - id: firestore
+    nome: Cloud Firestore (Google)
+    tipo: documento
+    python:
+      modulos: [google.cloud.firestore, google.cloud.firestore_v1, firebase_admin.firestore]
+    js:
+      pacotes: [firebase-admin/firestore, firebase/firestore, "@google-cloud/firestore", "@firebase/firestore"]
+
+  - id: dynamodb
+    nome: Amazon DynamoDB
+    tipo: chave-valor
+    python:
+      modulos: [boto3.dynamodb, aioboto3.dynamodb]
+      classes:
+        - {name: client, modules: [boto3], requer: {service_name: [dynamodb]}}
+        - {name: resource, modules: [boto3], requer: {service_name: [dynamodb]}}
+        - {name: DynamoDBChatMessageHistory, modules: [langchain_community.chat_message_histories, langchain.memory]}
+    js:
+      pacotes: ["@aws-sdk/client-dynamodb", "@aws-sdk/lib-dynamodb"]
+
+  - id: spanner
+    nome: Cloud Spanner (Google)
+    tipo: relacional
+    python:
+      modulos: [google.cloud.spanner, google.cloud.spanner_v1, google.cloud.spanner_dbapi, langchain_google_spanner]
+    js:
+      pacotes: ["@google-cloud/spanner"]
+
+  - id: bigquery
+    nome: BigQuery (Google)
+    tipo: relacional
+    python:
+      modulos: [google.cloud.bigquery, google.cloud.bigquery_storage, pandas_gbq]
+    js:
+      pacotes: ["@google-cloud/bigquery"]
+
+  - id: s3
+    nome: Amazon S3
+    tipo: objeto
+    python:
+      classes:
+        - {name: client, modules: [boto3], requer: {service_name: [s3]}}
+        - {name: resource, modules: [boto3], requer: {service_name: [s3]}}
+    js:
+      pacotes: ["@aws-sdk/client-s3", "@aws-sdk/lib-storage"]
+
+  - id: cloudflare_r2
+    nome: Cloudflare R2
+    tipo: objeto
+    wrangler: [r2_buckets]
+    js:
+      globais:
+        - {chamada: hubBlob, pacote: "@nuxthub/core"}
+
+  - id: cloudflare_vectorize
+    nome: Cloudflare Vectorize
+    tipo: vetorial
+    wrangler: [vectorize]
+    js:
+      globais:
+        - {chamada: hubVectorize, pacote: "@nuxthub/core"}
+
+  - id: chroma
+    nome: Chroma
+    tipo: vetorial
+    local: true
+    python:
+      modulos: [chromadb]
+      classes:
+        - {name: Chroma, modules: [langchain_chroma, langchain_community.vectorstores, langchain_community.vectorstores.chroma, langchain.vectorstores]}
+    config: [chroma]
+    js:
+      pacotes: [chromadb, "@langchain/community/vectorstores/chroma"]
+
+  - id: pinecone
+    nome: Pinecone
+    tipo: vetorial
+    python:
+      modulos: [pinecone]
+      classes:
+        - {name: PineconeVectorStore, modules: [langchain_pinecone]}
+    config: [pinecone]
+    js:
+      pacotes: ["@pinecone-database/pinecone", "@langchain/pinecone"]
+
+  - id: pgvector
+    nome: pgvector (PostgreSQL)
+    tipo: vetorial
+    python:
+      modulos: [pgvector]
+      classes:
+        - {name: PGVector, modules: [langchain_postgres, langchain_community.vectorstores, langchain_community.vectorstores.pgvector]}
+    config: [pgvector]
+    sql: ['create\s+extension\s+(if\s+not\s+exists\s+)?"?vector\b']
+    js:
+      pacotes: ["@langchain/community/vectorstores/pgvector", pgvector]
+
+  - id: qdrant
+    nome: Qdrant
+    tipo: vetorial
+    python:
+      modulos: [qdrant_client]
+      classes:
+        - {name: QdrantVectorStore, modules: [langchain_qdrant, llama_index.vector_stores.qdrant]}
+    config: [qdrant]
+    js:
+      pacotes: ["@qdrant/js-client-rest", "@langchain/qdrant", "@langchain/community/vectorstores/qdrant"]
+
+  - id: weaviate
+    nome: Weaviate
+    tipo: vetorial
+    python:
+      modulos: [weaviate]
+    config: [weaviate]
+    js:
+      pacotes: [weaviate-client, weaviate-ts-client, "@langchain/weaviate", "@langchain/community/vectorstores/weaviate"]
+
+  - id: faiss
+    nome: FAISS
+    tipo: vetorial
+    local: true
+    python:
+      modulos: [faiss]
+      classes:
+        - {name: FAISS, modules: [langchain_community.vectorstores, langchain.vectorstores]}
+    config: [faiss]
+    js:
+      pacotes: [faiss-node, "@langchain/community/vectorstores/faiss"]
+
+  - id: upstash_vector
+    nome: Upstash Vector
+    tipo: vetorial
+    js:
+      pacotes: ["@upstash/vector", "@langchain/community/vectorstores/upstash"]

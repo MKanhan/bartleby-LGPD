@@ -87,8 +87,14 @@ def evaluate(register: RiskRegister, threshold: str | None) -> GateResult:
     total = sum(counts.values())
     present = [lvl for lvl in LEVELS if counts[lvl] > 0]
     worst = present[-1] if present else None
+    # Spec 68: a presumed risk (fired only by signs, not facts) is shown but never fails the
+    # build — CI breaks on what the code proves, the document errs on the side of the risk.
+    confirmed = [r.nivel_inerente for r in register.risks if not r.presumido]
+    worst_confirmed = max(confirmed, key=lambda lvl: _ORDINAL.get(lvl, 0), default=None)
     breached = (
-        threshold is not None and worst is not None and _ORDINAL[worst] >= _ORDINAL[threshold]
+        threshold is not None
+        and worst_confirmed is not None
+        and _ORDINAL[worst_confirmed] >= _ORDINAL[threshold]
     )
     return GateResult(
         counts=counts, total=total, worst=worst, threshold=threshold, breached=breached
@@ -183,8 +189,9 @@ def render_findings(register: RiskRegister) -> str:
     lines = ["### Achados (linter LGPD)", ""]
     for r in risks:
         emoji = _EMOJI.get(r.nivel_inerente, "")
+        mark = " · _presumido (indício, não fato; não reprova o build)_" if r.presumido else ""
         lines.append(
-            f"- `{r.id}` {emoji} **{r.nivel_inerente}** — {r.descricao} · LGPD {_artigos(r)}"
+            f"- `{r.id}` {emoji} **{r.nivel_inerente}** — {r.descricao} · LGPD {_artigos(r)}{mark}"
         )
         if r.evidencia:
             first = r.evidencia[0]
@@ -235,7 +242,8 @@ def to_sarif(register: RiskRegister, root: str = ".") -> dict:
                 "ruleId": r.id,
                 "level": _SARIF_LEVEL.get(r.nivel_inerente, "warning"),
                 "message": {
-                    "text": f"{r.id} [{r.nivel_inerente}] {r.descricao} — LGPD {_artigos(r)}"
+                    "text": f"{r.id} [{r.nivel_inerente}]{' [presumido]' if r.presumido else ''} "
+                    f"{r.descricao} — LGPD {_artigos(r)}"
                 },
                 "locations": locations,
             }

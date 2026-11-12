@@ -1,0 +1,521 @@
+# Catálogo de provedores de LLM — fonte única para o scanner (Python e JS) e o config_scan (spec 65).
+# Provedor novo é uma entrada aqui, nunca um `if` no código.
+#
+# Campos por provedor:
+#   nome / sede / local      exibição no documento; `local: true` = roda na máquina do controlador
+#                            (não conta como transferência para terceiro)
+#   python.classes           construtores que criam um cliente de LLM: nome + módulos de onde vêm.
+#                            `kind` = invoke_llm (padrão) | embed. `model_pos` = posição do modelo
+#                            quando é argumento posicional. `requer` = argumento obrigatório
+#                            (ex.: boto3.client só é Bedrock com service_name bedrock-runtime).
+#                            `model_kwarg` = nome do argumento do modelo quando foge da lista global
+#                            (Agno usa `id`).
+#   python.funcoes           funções de módulo que já são a chamada ao LLM (ex.: ollama.chat)
+#   js.pacotes / js.classes  pacote importado e classes construídas com `new`
+#   js.fabricas              funções exportadas que devolvem o modelo (AI SDK: openai("gpt-4o"))
+#   hosts                    host de base_url ou de pedido HTTP direto (curinga `*.` e porta)
+#   env                      regex de variável de ambiente que denuncia o provedor (config_scan)
+#   prefixos                 prefixo em string "provedor/modelo" ou "provedor:modelo" (só em roteadores)
+#   evidencia                só azure_openai: sinais que vencem a classe do cliente
+
+providers:
+  - id: openai
+    nome: OpenAI
+    sede: EUA
+    python:
+      classes:
+        - {name: OpenAI, modules: [openai, langchain_openai, langchain_community.llms, langchain.llms, llama_index.llms.openai]}
+        - {name: OpenAIEmbedding, kind: embed, modules: [llama_index.embeddings.openai]}
+        - {name: OpenAIGenerator, modules: [haystack.components.generators, haystack.components.generators.openai]}
+        - {name: OpenAIChatGenerator, modules: [haystack.components.generators.chat, haystack.components.generators.chat.openai]}
+        - {name: OpenAITextEmbedder, kind: embed, modules: [haystack.components.embedders, haystack.components.embedders.openai_text_embedder]}
+        - {name: OpenAIDocumentEmbedder, kind: embed, modules: [haystack.components.embedders, haystack.components.embedders.openai_document_embedder]}
+        - {name: OpenAIChat, model_kwarg: id, modules: [agno.models.openai]}
+        - {name: AsyncOpenAI, modules: [openai]}
+        - {name: ChatOpenAI, modules: [langchain_openai, langchain_community.chat_models, langchain.chat_models]}
+        - {name: OpenAIEmbeddings, kind: embed, modules: [langchain_openai, langchain_community.embeddings, langchain.embeddings]}
+        - {name: OpenAIModel, model_pos: 0, modules: [pydantic_ai.models.openai]}
+        - {name: OpenAIChatModel, model_pos: 0, modules: [pydantic_ai.models.openai]}
+        - {name: OpenAIResponsesModel, model_pos: 0, modules: [pydantic_ai.models.openai]}
+      funcoes: [openai.ChatCompletion.create, openai.Completion.create, openai.Embedding.create, openai.chat.completions.create, openai.embeddings.create]
+    js:
+      pacotes: [openai, openai-edge, "@ai-sdk/openai", "@langchain/openai", langchain/chat_models/openai, langchain/llms/openai, langchain/embeddings/openai, "@openai/agents", "@openai/agents-openai", "@llamaindex/openai"]
+      classes: [OpenAI, OpenAIApi, ChatOpenAI, OpenAIEmbeddings]
+      fabricas: [openai, createOpenAI]
+    hosts: [api.openai.com]
+    env: ['OPENAI_API_KEY']
+    prefixos: [openai]
+
+  - id: azure_openai
+    nome: Azure OpenAI
+    sede: EUA (região escolhida pelo cliente)
+    python:
+      classes:
+        - {name: AzureOpenAI, modules: [openai, langchain_openai, langchain_community.llms]}
+        - {name: AsyncAzureOpenAI, modules: [openai]}
+        - {name: AzureChatOpenAI, modules: [langchain_openai, langchain_community.chat_models, langchain.chat_models]}
+        - {name: AzureOpenAIEmbeddings, kind: embed, modules: [langchain_openai, langchain_community.embeddings]}
+    js:
+      pacotes: ["@azure/openai", "@ai-sdk/azure"]
+      classes: [OpenAIClient, AzureOpenAI, AzureChatOpenAI]
+      fabricas: [azure, createAzure]
+    hosts: ['*.openai.azure.com', '*.cognitiveservices.azure.com']
+    env: ['AZURE_OPENAI_[A-Z_]+']
+    prefixos: [azure, azure_openai, azure_ai]
+    evidencia:
+      # `engine` não entra: no SDK 0.x da OpenAI ele também nomeia o modelo da OpenAI comum.
+      kwargs: [azure_endpoint, azure_deployment, deployment_id]
+      api_type: azure
+      caminho_url: /openai/deployments/
+
+  - id: anthropic
+    nome: Anthropic
+    sede: EUA
+    python:
+      classes:
+        - {name: Anthropic, modules: [anthropic, langchain_anthropic, langchain_community.llms, langchain.llms, llama_index.llms.anthropic]}
+        - {name: Claude, model_kwarg: id, modules: [agno.models.anthropic]}
+        - {name: AsyncAnthropic, modules: [anthropic]}
+        - {name: ChatAnthropic, modules: [langchain_anthropic, langchain_community.chat_models, langchain.chat_models]}
+        - {name: AnthropicLLM, modules: [langchain_anthropic]}
+        - {name: AnthropicModel, model_pos: 0, modules: [pydantic_ai.models.anthropic]}
+    js:
+      pacotes: ["@anthropic-ai/sdk", "@ai-sdk/anthropic", "@langchain/anthropic", "@llamaindex/anthropic"]
+      classes: [Anthropic, ChatAnthropic]
+      fabricas: [anthropic, createAnthropic]
+    hosts: [api.anthropic.com]
+    env: ['ANTHROPIC_API_KEY', 'CLAUDE_API_KEY']
+    prefixos: [anthropic]
+
+  - id: google
+    nome: Google (Gemini)
+    sede: EUA
+    python:
+      classes:
+        - {name: GenerativeModel, model_pos: 0, modules: [google.generativeai]}
+        - {name: Client, modules: [google.genai]}
+        - {name: ChatGoogleGenerativeAI, modules: [langchain_google_genai]}
+        - {name: GoogleGenerativeAI, modules: [langchain_google_genai]}
+        - {name: GoogleGenerativeAIEmbeddings, kind: embed, modules: [langchain_google_genai]}
+        - {name: ChatVertexAI, modules: [langchain_google_vertexai]}
+        - {name: GeminiModel, model_pos: 0, modules: [pydantic_ai.models.gemini]}
+        - {name: GoogleModel, model_pos: 0, modules: [pydantic_ai.models.google]}
+        - {name: Gemini, modules: [llama_index.llms.gemini]}
+        - {name: GoogleGenAI, modules: [llama_index.llms.google_genai]}
+        - {name: GeminiEmbedding, kind: embed, modules: [llama_index.embeddings.gemini]}
+        - {name: Gemini, model_kwarg: id, modules: [agno.models.google]}
+      funcoes: [google.generativeai.embed_content]
+    js:
+      pacotes: ["@google/genai", "@google/generative-ai", "@ai-sdk/google", "@langchain/google-genai", "@langchain/google-vertexai", "@ai-sdk/google-vertex", "@llamaindex/google"]
+      classes: [GoogleGenAI, GoogleGenerativeAI, ChatGoogleGenerativeAI]
+      fabricas: [google, createGoogleGenerativeAI]
+    hosts: [generativelanguage.googleapis.com, '*.aiplatform.googleapis.com']
+    # .../v1beta/models/gemini-2.0-flash:generateContent — o modelo está no caminho (spec 73)
+    url_modelo: '/models/([A-Za-z0-9._-]+):'
+    env: ['GOOGLE_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_GENAI_API_KEY']
+    prefixos: [google, gemini, vertex_ai, google_genai, google_vertexai, google_anthropic_vertex]
+
+  - id: groq
+    nome: Groq
+    sede: EUA
+    python:
+      classes:
+        - {name: Groq, modules: [groq]}
+        - {name: AsyncGroq, modules: [groq]}
+        - {name: ChatGroq, modules: [langchain_groq]}
+        - {name: GroqModel, model_pos: 0, modules: [pydantic_ai.models.groq]}
+        - {name: Groq, modules: [llama_index.llms.groq]}
+        - {name: Groq, model_kwarg: id, modules: [agno.models.groq]}
+    js:
+      pacotes: [groq-sdk, "@ai-sdk/groq", "@langchain/groq", "@llamaindex/groq"]
+      classes: [Groq, ChatGroq]
+      fabricas: [groq, createGroq]
+    hosts: [api.groq.com]
+    env: ['GROQ_API_KEY']
+    prefixos: [groq]
+
+  - id: mistral
+    nome: Mistral AI
+    sede: França
+    python:
+      classes:
+        - {name: Mistral, modules: [mistralai]}
+        - {name: MistralClient, modules: [mistralai.client]}
+        - {name: MistralAsyncClient, modules: [mistralai.async_client]}
+        - {name: ChatMistralAI, modules: [langchain_mistralai]}
+        - {name: MistralModel, model_pos: 0, modules: [pydantic_ai.models.mistral]}
+        - {name: MistralAI, modules: [llama_index.llms.mistralai]}
+        - {name: MistralAIEmbedding, kind: embed, modules: [llama_index.embeddings.mistralai]}
+        - {name: MistralChat, model_kwarg: id, modules: [agno.models.mistral]}
+    js:
+      pacotes: ["@mistralai/mistralai", "@ai-sdk/mistral", "@langchain/mistralai", "@llamaindex/mistral"]
+      classes: [Mistral, MistralClient, ChatMistralAI]
+      fabricas: [mistral, createMistral]
+    hosts: [api.mistral.ai]
+    env: ['MISTRAL_API_KEY']
+    prefixos: [mistral, mistralai]
+
+  - id: ollama
+    nome: Ollama
+    sede: local
+    local: true
+    python:
+      classes:
+        - {name: Client, modules: [ollama]}
+        - {name: AsyncClient, modules: [ollama]}
+        - {name: Ollama, modules: [langchain_community.llms, langchain.llms]}
+        - {name: OllamaLLM, modules: [langchain_ollama]}
+        - {name: ChatOllama, modules: [langchain_ollama, langchain_community.chat_models]}
+        - {name: OllamaEmbeddings, kind: embed, modules: [langchain_ollama, langchain_community.embeddings]}
+        - {name: Ollama, modules: [llama_index.llms.ollama]}
+        - {name: OllamaEmbedding, kind: embed, modules: [llama_index.embeddings.ollama]}
+        - {name: Ollama, model_kwarg: id, modules: [agno.models.ollama]}
+      funcoes: [ollama.chat, ollama.generate, ollama.embeddings, ollama.embed]
+    js:
+      pacotes: [ollama, "@langchain/ollama", ollama-ai-provider, "@llamaindex/ollama"]
+      classes: [Ollama, ChatOllama]
+      fabricas: [ollama, createOllama]
+    hosts: ['localhost:11434', '127.0.0.1:11434']
+    env: ['OLLAMA', 'OLLAMA_(HOST|BASE_URL|URL|API_URL|API_BASE|SERVERS?|ENDPOINT)']
+    prefixos: [ollama, ollama_chat]
+
+  - id: bedrock
+    nome: Amazon Bedrock
+    sede: EUA (região escolhida pelo cliente)
+    python:
+      classes:
+        - {name: client, modules: [boto3, aioboto3], requer: {service_name: [bedrock-runtime, bedrock-agent-runtime]}}
+        - {name: ChatBedrock, modules: [langchain_aws, langchain_community.chat_models]}
+        - {name: ChatBedrockConverse, modules: [langchain_aws]}
+        - {name: BedrockLLM, modules: [langchain_aws]}
+        - {name: Bedrock, modules: [langchain_community.llms, langchain.llms]}
+        - {name: BedrockEmbeddings, kind: embed, modules: [langchain_aws, langchain_community.embeddings]}
+        - {name: BedrockConverseModel, model_pos: 0, modules: [pydantic_ai.models.bedrock]}
+    js:
+      pacotes: ["@aws-sdk/client-bedrock-runtime", "@ai-sdk/amazon-bedrock", "@langchain/aws"]
+      classes: [BedrockRuntimeClient]
+      fabricas: [bedrock, createAmazonBedrock]
+    hosts: ['bedrock-runtime.*.amazonaws.com']
+    # invoke_model serve chat e embeddings: só o modelo distingue (spec 73)
+    modelos_embed: [amazon.titan-embed, cohere.embed, amazon.nova-2-multimodal-embeddings]
+    env: ['[A-Z_]*BEDROCK[A-Z_]*']
+    prefixos: [bedrock, bedrock_converse]
+
+  - id: openrouter
+    nome: OpenRouter
+    sede: EUA
+    js:
+      pacotes: ["@openrouter/ai-sdk-provider"]
+      fabricas: [openrouter, createOpenRouter]
+    hosts: [openrouter.ai]
+    env: ['OPENROUTER_API_KEY']
+    prefixos: [openrouter]
+
+  - id: together
+    nome: Together AI
+    sede: EUA
+    python:
+      classes:
+        - {name: Together, modules: [together]}
+        - {name: AsyncTogether, modules: [together]}
+        - {name: ChatTogether, modules: [langchain_together]}
+    js:
+      pacotes: [together-ai, "@ai-sdk/togetherai"]
+      classes: [Together]
+      fabricas: [togetherai, createTogetherAI]
+    hosts: [api.together.xyz, api.together.ai]
+    env: ['TOGETHER_API_KEY']
+    prefixos: [together_ai, together, fireworks_together]
+
+  - id: deepseek
+    nome: DeepSeek
+    sede: China
+    python:
+      classes:
+        - {name: ChatDeepSeek, modules: [langchain_deepseek]}
+    js:
+      pacotes: ["@ai-sdk/deepseek", "@langchain/deepseek"]
+      fabricas: [deepseek, createDeepSeek]
+    hosts: [api.deepseek.com]
+    env: ['DEEPSEEK_API_KEY']
+    prefixos: [deepseek]
+
+  - id: cohere
+    nome: Cohere
+    sede: Canadá
+    python:
+      classes:
+        - {name: Client, modules: [cohere]}
+        - {name: ClientV2, modules: [cohere]}
+        - {name: AsyncClient, modules: [cohere]}
+        - {name: ChatCohere, modules: [langchain_cohere]}
+        - {name: CohereEmbeddings, kind: embed, modules: [langchain_cohere, langchain_community.embeddings]}
+    js:
+      pacotes: [cohere-ai, "@ai-sdk/cohere", "@langchain/cohere"]
+      classes: [CohereClient, CohereClientV2]
+      fabricas: [cohere, createCohere]
+    hosts: [api.cohere.com, api.cohere.ai]
+    env: ['COHERE_API_KEY', 'CO_API_KEY']
+    prefixos: [cohere]
+
+  - id: huggingface
+    nome: Hugging Face (Inference API)
+    sede: EUA
+    python:
+      classes:
+        - {name: InferenceClient, modules: [huggingface_hub]}
+        - {name: HuggingFaceEndpoint, modules: [langchain_huggingface, langchain_community.llms]}
+        - {name: HuggingFaceHub, modules: [langchain_community.llms, langchain.llms]}
+    js:
+      pacotes: ["@huggingface/inference"]
+      classes: [HfInference, InferenceClient]
+    hosts: [api-inference.huggingface.co, router.huggingface.co]
+    env: ['HUGGINGFACEHUB_API_TOKEN', 'HF_TOKEN']
+    prefixos: [huggingface]
+
+  - id: huggingface_local
+    nome: Modelo Hugging Face executado localmente
+    sede: local
+    local: true
+    python:
+      classes:
+        - {name: HuggingFaceEmbeddings, kind: embed, modules: [langchain_huggingface, langchain_community.embeddings, langchain.embeddings]}
+        - {name: SentenceTransformer, kind: embed, model_pos: 0, modules: [sentence_transformers]}
+        - {name: HuggingFacePipeline, modules: [langchain_huggingface, langchain_community.llms]}
+        - {name: HuggingFaceEmbedding, kind: embed, modules: [llama_index.embeddings.huggingface]}
+        - {name: SentenceTransformersTextEmbedder, kind: embed, modules: [haystack.components.embedders, haystack.components.embedders.sentence_transformers_text_embedder]}
+        - {name: SentenceTransformersDocumentEmbedder, kind: embed, modules: [haystack.components.embedders, haystack.components.embedders.sentence_transformers_document_embedder]}
+        # transformers: qualquer classe de modelo carregada por from_pretrained (spec 73);
+        # tokenizador, processador e configuração não são o modelo
+        - {name: from_pretrained, model_pos: 0, modules: [transformers], exceto: [AutoTokenizer, AutoProcessor, AutoConfig, AutoFeatureExtractor, AutoImageProcessor, PreTrainedTokenizer, PreTrainedTokenizerFast]}
+        - {name: pipeline, modules: [transformers]}
+
+  - id: llamacpp_local
+    nome: Modelo executado localmente com llama.cpp
+    sede: local
+    local: true
+    python:
+      classes:
+        - {name: Llama, model_kwarg: model_path, modules: [llama_cpp]}
+        - {name: LlamaCPP, model_kwarg: model_path, modules: [llama_index.llms.llama_cpp]}
+        - {name: LlamaCpp, model_kwarg: model_path, modules: [langchain_community.llms, langchain.llms]}
+
+  - id: fastembed_local
+    nome: Embeddings FastEmbed executados localmente
+    sede: local
+    local: true
+    python:
+      classes:
+        - {name: FastEmbedEmbeddings, kind: embed, modules: [langchain_community.embeddings]}
+        - {name: TextEmbedding, kind: embed, model_kwarg: model_name, modules: [fastembed]}
+        - {name: FastEmbedEmbedding, kind: embed, modules: [llama_index.embeddings.fastembed]}
+
+  - id: cloudflare_workers_ai
+    nome: Cloudflare Workers AI
+    sede: EUA
+    js:
+      pacotes: [workers-ai-provider]
+      fabricas: [createWorkersAI]
+      # NuxtHub injeta hubAI() sem import; vale com o módulo declarado no package.json (spec 73)
+      globais:
+        - {chamada: hubAI, pacote: "@nuxthub/core"}
+    modelos_embed: ["@cf/baai/bge", "@cf/google/embeddinggemma"]
+    # binding declarado no wrangler.toml ([ai] binding = "AI") e chamado como env.AI.run(modelo, ...)
+    wrangler: [ai]
+
+  - id: xai
+    nome: xAI (Grok)
+    sede: EUA
+    python:
+      classes:
+        - {name: Client, modules: [xai_sdk]}
+        - {name: xAI, model_kwarg: id, modules: [agno.models.xai]}
+        - {name: ChatXAI, modules: [langchain_xai]}
+    js:
+      pacotes: ["@ai-sdk/xai", "@langchain/xai"]
+      fabricas: [xai, createXai]
+    hosts: [api.x.ai]
+    env: ['XAI_API_KEY']
+    prefixos: [xai]
+
+  - id: alibaba
+    nome: Alibaba Cloud (Qwen / DashScope)
+    sede: China
+    python:
+      classes:
+        - {name: ChatTongyi, modules: [langchain_community.chat_models, langchain_community.chat_models.tongyi]}
+        - {name: Tongyi, modules: [langchain_community.llms]}
+        - {name: DashScope, modules: [llama_index.llms.dashscope]}
+      funcoes: [dashscope.Generation.call, dashscope.TextEmbedding.call]
+    js:
+      pacotes: ["@ai-sdk/alibaba"]
+    hosts: [dashscope.aliyuncs.com, dashscope-intl.aliyuncs.com]
+    env: ['DASHSCOPE_API_KEY']
+    prefixos: [dashscope]
+
+# Indícios de uso de IA que não são, por si, uma chamada identificada (spec 65, alerta de omissão).
+# Se aparecem no repositório e nenhuma chamada a modelo foi identificada, o documento avisa.
+# python/js: módulo importado ou dependência declarada (nome normalizado, prefixo vale).
+# hosts: host de serviço de IA fora do catálogo, com o nome a exibir.
+sinais_de_ia:
+  python: [openai, anthropic, groq, google.generativeai, google.genai, google-generativeai, google-genai, mistralai, ollama, cohere, together, litellm, langchain, langgraph, llama_index, llama-index, crewai, agno, haystack, semantic_kernel, semantic-kernel, autogen, smolagents, instructor, dspy, fastembed, sentence_transformers, sentence-transformers, transformers, llama_cpp, llama-cpp-python, vllm, gpt4all, dashscope, xai_sdk, xai-sdk, huggingface_hub, huggingface-hub, pydantic_ai, pydantic-ai]
+  js: [openai, openai-edge, ai, "@ai-sdk/", "@anthropic-ai/", groq-sdk, "@google/genai", "@google/generative-ai", "@mistralai/", ollama, langchain, "@langchain/", llamaindex, "@mastra/", cohere-ai, "@huggingface/", "@openrouter/"]
+  # Bibliotecas cujas chamadas o scanner analisa por outro caminho (roteadores, orquestradores que
+  # usam clientes rastreados, o núcleo do AI SDK). Não geram alerta de "não analisada".
+  analisadas: [langchain, langgraph, crewai, litellm, pydantic_ai, ai, "@langchain/", "@ai-sdk/", openai-edge]
+  hosts:
+    api.perplexity.ai: Perplexity
+    api.fireworks.ai: Fireworks AI
+    api.replicate.com: Replicate
+
+# Aviso que não depende de conhecer a biblioteca (spec 67). Pacote importado em código de produto
+# (raiz do módulo Python; `@escopo/nome` ou `nome` em JS) cujo nome tem um radical abaixo e que não
+# virou fato vira aviso no documento. `palavras` casam com a palavra inteira do nome; `trechos`,
+# com qualquer parte. Dependência só declarada (sem import) vale apenas quando nenhuma chamada a
+# modelo foi achada. `papeis`: classe importada de um módulo de framework com um desses segmentos
+# é um modelo ou um banco, catalogado ou não. `namespaces`: raízes Python que só dizem algo com o
+# segundo nome (google.generativeai). `neutros`: nomes com radical que não são IA nem banco.
+# `orm`: camadas de acesso a banco, explicadas por qualquer banco achado.
+vocabulario_de_aviso:
+  ia:
+    palavras: [ai, llm, llms, gpt, tts, stt, asr]
+    trechos: [openai, anthropic, claude, gemini, llama, mistral, ollama, groq, cohere, bedrock, huggingface, transformer, embed, whisper, speech, genai, vertexai, mem0, autogen, haystack, crewai, agno, dspy, smolagents, langchain, langgraph, litellm, deepseek, dashscope, replicate, perplexity]
+  armazenamento:
+    palavras: [db, kv, s3]
+    trechos: [sql, mongo, opensearch, elasticsearch, vector, blob, storage, firestore, firebase, supabase, dynamo, milvus, lancedb, neo4j, chroma, pinecone, qdrant, weaviate, faiss, cassandra, couchbase, couchdb, tinydb, duckdb]
+  papeis:
+    frameworks: [langchain, llama_index, haystack, haystack_integrations, "@langchain/"]
+    segmentos: [llms, chat_models, embeddings, embedders, generators, vectorstores, vector_stores, document_stores]
+    segmentos_excluidos: [types, base, schema, utils, interfaces]
+    raizes_abstratas: [langchain_core, llama_index.core, haystack.core, haystack.dataclasses, "@langchain/core"]
+  namespaces: [google, azure]
+  neutros: [react-icons, class-transformer, dotenv]
+  # ORM e camadas de acesso não dizem o banco: ficam explicadas quando algum banco virou fato.
+  orm: [sqlalchemy, sqlmodel, flask_sqlalchemy, peewee, tortoise, prisma, "@prisma/client", drizzle-orm, typeorm, sequelize, knex, kysely]
+
+# Agentes de framework JS que recebem um modelo do AI SDK em `new Agent({ model })` (Mastra): o
+# provedor e o modelo vêm da expressão do `model`, como numa chamada do AI SDK (spec 69).
+js_agentes_com_modelo: ["@mastra/core"]
+
+# Métodos da instância de fábrica do AI SDK que devolvem um modelo do mesmo provedor
+# (const openai = createOpenAI(...); openai.embedding("text-embedding-3-small")) — spec 71.
+js_factory_methods: [embedding, textEmbeddingModel, textEmbedding, chat, languageModel, responses, completion]
+
+# Invólucros que reexportam o módulo de um provedor (log, observabilidade): o código chama o
+# provedor por eles. Prefixo do caminho qualificado → caminho equivalente.
+module_aliases:
+  langfuse.openai.openai: openai
+  langfuse.openai: openai
+  promptlayer.openai: openai
+  promptlayer.anthropic: anthropic
+  helicone.openai: openai
+
+# Classes cuja instância responde como o módulo (spec 73): `boto3.Session().client("x")` é
+# `boto3.client("x")`.
+instancias_de_modulo:
+  boto3.Session: boto3
+  boto3.session.Session: boto3
+  aioboto3.Session: aioboto3
+
+# Nomes de argumento que carregam o modelo (Python: kwargs; JS: propriedades do objeto).
+model_kwargs: [model, model_name, modelName, model_id, modelId, model_path, deployment_name, azure_deployment]
+
+# Nomes de argumento que carregam o endereço do serviço.
+base_url_kwargs: [base_url, api_base, openai_api_base, baseURL, basePath, endpoint, host]
+
+# Métodos de chamada que recebem o modelo por posição, não por nome (SDK 0.x da Mistral:
+# client.embeddings("mistral-embed", textos)). Índice do argumento.
+call_model_pos:
+  embeddings: 0
+
+# Chamadas em que o modelo não é argumento porque fica guardado no provedor (spec 75). Prefixo do
+# atributo → o que o documento diz sobre a origem do modelo quando ele não está na chamada.
+call_model_origin:
+  beta.threads: "definido no assistente configurado no provedor (API de Assistants)"
+  beta.assistants: "definido no assistente configurado no provedor (API de Assistants)"
+
+# Chamadas que, feitas num receptor que é cliente de LLM, são a chamada ao modelo (sufixo do atributo).
+call_methods:
+  invoke_llm:
+    - chat.completions.create
+    - moderations.create
+    - chat.completions.parse
+    - completions.create
+    - responses.create
+    - messages.create
+    - messages.stream
+    - generate_content
+    - generate_content_stream
+    - models.generate_content
+    - models.generate_content_stream
+    - generateContent
+    - models.generateContent
+    - send_message
+    - send_message_stream
+    - chat.complete
+    - chat.stream
+    - chat
+    - generate
+    - invoke
+    - ainvoke
+    - stream
+    - astream
+    - batch
+    - predict
+    - apredict
+    - call
+    - run
+    - arun
+    - run_sync
+    - run_stream
+    - invoke_model
+    - invoke_model_with_response_stream
+    - converse
+    - converse_stream
+    - audio.transcriptions.create
+    - createChatCompletion
+    - createCompletion
+    - kickoff
+    - complete
+    - acomplete
+    - stream_complete
+    - stream_chat
+    - achat
+    - astream_chat
+    - chat_stream
+  embed:
+    - embeddings.create
+    - embed_content
+    - models.embed_content
+    - embed_query
+    - embed_documents
+    - aembed_query
+    - aembed_documents
+    - embed
+    - encode
+    - createEmbedding
+    - get_text_embedding
+    - get_query_embedding
+    - get_text_embedding_batch
+    - aget_text_embedding
+    - embeddings
+
+# Métodos de um cliente cujo retorno continua sendo o cliente (o modelo pode vir aqui).
+propagating_methods: [start_chat, bind_tools, with_structured_output, bind, with_config, with_retry, with_fallbacks, chats.create, getGenerativeModel]
+
+# Chamadas que recebem um cliente como argumento e devolvem algo que também chama o modelo.
+# Regex sobre o nome da função chamada.
+propagating_callees: ['Chain$', '^create_\w+_(agent|chain)$', '^RunnableWithMessageHistory$', '^Agent$', '^Crew$', '^AgentExecutor$', '^initialize_agent$', '^LLMRouterChain$']
+
+# Funções que recebem "provedor/modelo" ou "provedor:modelo" numa string (o prefixo diz o provedor).
+routers:
+  python: [litellm.completion, litellm.acompletion, litellm.embedding, crewai.LLM, pydantic_ai.Agent, langchain.chat_models.init_chat_model, langchain.chat_models.base.init_chat_model, langchain.embeddings.init_embeddings, langchain.embeddings.base.init_embeddings]
+# Nome de modelo sem prefixo num roteador (spec 73): o LiteLLM e o init_chat_model do LangChain
+# mandam estes nomes ao provedor abaixo. Só entra o que não tem ambiguidade: `gemini-*` sem
+# prefixo vai para a Vertex no LiteLLM, então fica fora. Não vale quando há base_url.
+router_modelos_sem_prefixo:
+  openai: ['^gpt-', '^chatgpt-', '^o[134](-|$)', '^text-embedding-(3|ada)']
+  anthropic: ['^claude-']
+# Argumentos que, num roteador, dizem o provedor por nome (LangChain: init_chat_model(model,
+# model_provider="openai")). O nome é casado com os `prefixos` dos provedores.
+router_provider_kwargs: [model_provider, provider]

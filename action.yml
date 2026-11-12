@@ -13,7 +13,7 @@ inputs:
     default: "."
   fail-on:
     description: >-
-      Falha o job quando o pior risco residual atingir este nível:
+      Falha o job quando a severidade do pior achado atingir este nível:
       none | baixo | medio | alto | critico. Comece em 'none' para observar sem bloquear.
     required: false
     default: "none"

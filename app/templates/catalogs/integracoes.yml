@@ -1,0 +1,189 @@
+# Catálogo de integrações: onde o agente guarda memória de conversa e para onde manda telemetria
+# (spec 69). Mesma regra dos outros catálogos: integração nova é linha de YAML, nunca `if`.
+#
+# Campos:
+#   id, nome       identificador estável e nome para o documento
+#   tipo           memoria | telemetria | servico
+#                  servico (spec 73): biblioteca que é, ela mesma, um serviço externo (googletrans
+#                  manda o texto ao Google Tradutor). Não vira operação: entra na lista de
+#                  serviços externos pelo `host`, que é obrigatório e só existe nesse tipo.
+#   local          true quando roda no ambiente do controlador (não é transferência a terceiro)
+#   python.modulos qualquer chamada a um nome importado desses módulos é a integração
+#   python.classes classe construída a partir de um módulo (ex.: MemorySaver do LangGraph)
+#   js.pacotes     pacote importado (prefixo vale: "@langfuse/" cobre "@langfuse/tracing")
+#   js.nomes       nome importado de um pacote que traz muito mais (MemorySaver da raiz do LangGraph)
+#   env            variável que liga a integração quando aparece no código (os.getenv/process.env);
+#                  num serviço, a credencial que o código lê pelo nome
+
+integracoes:
+  - id: redis
+    nome: Redis
+    tipo: memoria
+    local: true
+    python:
+      modulos: [redis, langchain_redis]
+      classes:
+        - {name: RedisChatMessageHistory, modules: [langchain_community.chat_message_histories, langchain.memory]}
+    js:
+      pacotes: [redis, ioredis, "@redis/client", "@langchain/redis"]
+
+  - id: upstash
+    nome: Upstash Redis
+    tipo: memoria
+    python:
+      modulos: [upstash_redis]
+    js:
+      pacotes: ["@upstash/redis"]
+
+  - id: langchain_memory
+    nome: Memória de conversa do LangChain/LangGraph (em processo)
+    tipo: memoria
+    local: true
+    python:
+      modulos: [langgraph.checkpoint.memory]
+      classes:
+        - {name: ConversationBufferMemory, modules: [langchain.memory, langchain_classic.memory, langchain.chains.conversation.memory]}
+        - {name: ConversationBufferWindowMemory, modules: [langchain.memory, langchain_classic.memory, langchain.chains.conversation.memory]}
+        - {name: ConversationSummaryMemory, modules: [langchain.memory, langchain_classic.memory, langchain.chains.conversation.memory]}
+        - {name: ConversationSummaryBufferMemory, modules: [langchain.memory, langchain_classic.memory, langchain.chains.conversation.memory]}
+        - {name: StreamlitChatMessageHistory, modules: [langchain_community.chat_message_histories]}
+        - {name: ChatMessageHistory, modules: [langchain_community.chat_message_histories, langchain.memory, langchain_classic.memory]}
+        - {name: InMemoryChatMessageHistory, modules: [langchain_core.chat_history]}
+        - {name: InMemoryStore, modules: [langgraph.store.memory]}
+    js:
+      pacotes: [langchain/memory, "@langchain/langgraph/checkpoint", "@langchain/langgraph-checkpoint"]
+      nomes:
+        - {name: MemorySaver, pacotes: ["@langchain/langgraph", "@langchain/langgraph/web"]}
+        - {name: InMemoryStore, pacotes: ["@langchain/langgraph", "@langchain/langgraph/web"]}
+
+  - id: mem0
+    nome: mem0 (biblioteca executada no ambiente do controlador)
+    tipo: memoria
+    local: true
+    python:
+      classes:
+        - {name: Memory, modules: [mem0]}
+        - {name: AsyncMemory, modules: [mem0]}
+
+  - id: mem0_platform
+    nome: mem0 Platform (serviço em nuvem)
+    tipo: memoria
+    python:
+      classes:
+        - {name: MemoryClient, modules: [mem0]}
+        - {name: AsyncMemoryClient, modules: [mem0]}
+    js:
+      pacotes: [mem0ai, "@mem0/vercel-ai-provider"]
+
+  - id: zep
+    nome: Zep
+    tipo: memoria
+    python:
+      modulos: [zep_python, zep_cloud]
+    js:
+      pacotes: ["@getzep/zep-js", "@getzep/zep-cloud"]
+
+  - id: langsmith
+    nome: LangSmith
+    tipo: telemetria
+    python:
+      modulos: [langsmith]
+    js:
+      pacotes: [langsmith]
+    env: [LANGSMITH_TRACING, LANGCHAIN_TRACING_V2, LANGSMITH_TRACING_V2]
+
+  - id: langfuse
+    nome: Langfuse
+    tipo: telemetria
+    python:
+      modulos: [langfuse]
+    js:
+      pacotes: [langfuse, langfuse-langchain, langfuse-vercel, "@langfuse/"]
+
+  - id: helicone
+    nome: Helicone
+    tipo: telemetria
+    js:
+      pacotes: ["@helicone/"]
+
+  - id: opentelemetry
+    nome: OpenTelemetry (exportação de traces)
+    tipo: telemetria
+    python:
+      modulos: [opentelemetry.sdk, opentelemetry.exporter]
+    js:
+      pacotes: ["@opentelemetry/sdk-node", "@opentelemetry/sdk-trace-node", "@opentelemetry/exporter-trace-otlp-http", "@vercel/otel"]
+
+  # --- Serviços externos alcançados por biblioteca (spec 73) ---------------------------------
+
+  - id: google_translate
+    nome: Google Tradutor
+    tipo: servico
+    host: translate.google.com
+    python:
+      modulos: [googletrans, deep_translator]
+    js:
+      pacotes: ["@vitalets/google-translate-api", google-translate-api-x]
+
+  - id: cohere_rerank
+    nome: Cohere Rerank
+    tipo: servico
+    host: api.cohere.com
+    python:
+      modulos: [llama_index.postprocessor.cohere_rerank]
+      classes:
+        - {name: CohereRerank, modules: [langchain_cohere, langchain.retrievers.document_compressors, langchain_community.document_compressors]}
+
+  - id: llamacloud
+    nome: LlamaCloud
+    tipo: servico
+    host: api.cloud.llamaindex.ai
+    python:
+      modulos: [llama_cloud, llama_cloud_services, llama_parse, llama_index.indices.managed.llama_cloud]
+    js:
+      pacotes: ["@llamaindex/cloud", llama-cloud-services]
+
+  - id: google_tts
+    nome: Google Text-to-Speech (gTTS)
+    tipo: servico
+    host: translate.google.com
+    python:
+      modulos: [gtts]
+
+  - id: e2b
+    nome: E2B (execução de código em nuvem)
+    tipo: servico
+    host: api.e2b.dev
+    python:
+      modulos: [e2b, e2b_code_interpreter]
+    js:
+      pacotes: [e2b, "@e2b/code-interpreter", "@e2b/sdk"]
+    env: [E2B_API_KEY]
+
+  - id: modal
+    nome: Modal (computação em nuvem)
+    tipo: servico
+    host: api.modal.com
+    python:
+      modulos: [modal]
+    js:
+      pacotes: [modal]
+
+# Endereços escritos no código que nenhuma chamada seguida alcança (spec 74). Entram na seção 8,
+# numa sublista própria, só quando têm formato de API: um link de página não é serviço que
+# recebe dados. Regras em dado, nunca em `if`.
+#   host       regex sobre o host (com a porta, se houver)
+#   caminho    regex sobre o caminho da URL
+#   ignorados  hosts (e subdomínios) que têm formato de API e não são destino de dados do sistema
+enderecos_no_codigo:
+  host:
+    - '^(api|apis|openapi|rest|graphql|gateway|rpc)[.-]'
+    - '[.-]api[.-]'
+    - '^\d{1,3}(\.\d{1,3}){3}'
+    - ':\d+$'
+  caminho:
+    - '(^|/)api(/|$)'
+    - '/v\d+([/:.]|$)'
+    - '/graphql($|[/?])'
+  ignorados: [www.w3.org, schemas.microsoft.com, schemas.openxmlformats.org, purl.org, purl.oclc.org, example.com, example.org, github.com, raw.githubusercontent.com, cdn.jsdelivr.net, unpkg.com, fonts.googleapis.com, fonts.gstatic.com]
+

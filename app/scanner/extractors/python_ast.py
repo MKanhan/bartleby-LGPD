@@ -1,4 +1,9 @@
-"""Python AST extractors — entry points, LLM calls, tool definitions."""
+"""Python AST extractors — entry points, tool definitions, external HTTP calls.
+
+LLM calls moved to `llm_calls.py` (spec 65): the provider comes from evidence in the code, never
+from a method name. `analyze_python_file` still returns them for a single file, which is what the
+unit tests exercise; the orchestrator runs the repository-wide analysis instead.
+"""
 
 from __future__ import annotations
 
@@ -6,32 +11,7 @@ import ast
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from app.scanner.schema import Entrypoint, ExternalCall, Operation, ToolDef
-
-# name_of_call_target → (operation_kind, provider_guess)
-_CALL_TARGETS: dict[str, tuple[str, str]] = {
-    # Anthropic SDK
-    "messages.create": ("invoke_llm", "anthropic"),
-    "messages.stream": ("invoke_llm", "anthropic"),
-    # OpenAI SDK
-    "chat.completions.create": ("invoke_llm", "openai"),
-    "responses.create": ("invoke_llm", "openai"),
-    "embeddings.create": ("embed", "openai"),
-    "images.generate": ("invoke_llm", "openai"),
-    # Google GenAI
-    "generate_content": ("invoke_llm", "google"),
-    "embed_content": ("embed", "google"),
-    # LangChain runnable interface
-    "invoke": ("invoke_llm", "langchain"),
-    "ainvoke": ("invoke_llm", "langchain"),
-    "stream": ("invoke_llm", "langchain"),
-    "astream": ("invoke_llm", "langchain"),
-    # LangChain embeddings
-    "embed_query": ("embed", "langchain"),
-    "embed_documents": ("embed", "langchain"),
-    "aembed_query": ("embed", "langchain"),
-    "aembed_documents": ("embed", "langchain"),
-}
+from app.scanner.schema import Entrypoint, Operation, ToolDef
 
 _ENTRY_DECORATORS: dict[str, str] = {
     "app.post": "fastapi",
@@ -53,15 +33,12 @@ _ENTRY_DECORATORS: dict[str, str] = {
 
 _LAMBDA_HANDLERS = {"lambda_handler", "handler"}
 
-_HTTP_LIBS = {"httpx", "requests", "urllib"}
-
 
 @dataclass
 class _FileFacts:
     entrypoints: list[Entrypoint] = field(default_factory=list)
     operations: list[Operation] = field(default_factory=list)
     tools: list[ToolDef] = field(default_factory=list)
-    external_calls: list[ExternalCall] = field(default_factory=list)
 
 
 def _attr_dotted(node: ast.AST) -> str | None:
@@ -79,17 +56,6 @@ def _attr_dotted(node: ast.AST) -> str | None:
     else:
         return None
     return ".".join(reversed(parts))
-
-
-def _literal_kwarg(call: ast.Call, name: str) -> str | None:
-    for kw in call.keywords:
-        if (
-            kw.arg == name
-            and isinstance(kw.value, ast.Constant)
-            and isinstance(kw.value.value, str)
-        ):
-            return kw.value.value
-    return None
 
 
 def _ends_with(dotted: str, target: str) -> bool:
@@ -182,30 +148,8 @@ def _decorator_matches_entrypoint(deco: ast.AST) -> tuple[str, str] | None:
     return None
 
 
-def _infer_http_call(call: ast.Call) -> tuple[str, str] | None:
-    dotted = _attr_dotted(call.func)
-    if not dotted:
-        return None
-    for lib in _HTTP_LIBS:
-        if lib in dotted:
-            last = dotted.split(".")[-1]
-            if last in {"get", "post", "put", "delete", "patch", "request"}:
-                return (last.upper(), lib)
-    return None
-
-
-def _url_arg(call: ast.Call) -> str | None:
-    if call.args and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str):
-        return call.args[0].value
-    for kw in call.keywords:
-        if kw.arg == "url" and isinstance(kw.value, ast.Constant):
-            return str(kw.value.value)
-    return None
-
-
-def analyze_python_file(path: Path, root: Path) -> _FileFacts:
+def analyze_python_file(path: Path, root: Path, *, include_llm: bool = True) -> _FileFacts:
     source = path.read_text(encoding="utf-8", errors="ignore")
-    lines = source.splitlines()
     try:
         tree = ast.parse(source, filename=str(path))
     except SyntaxError:
@@ -213,7 +157,6 @@ def analyze_python_file(path: Path, root: Path) -> _FileFacts:
 
     rel = path.relative_to(root).as_posix()
     facts = _FileFacts()
-    parents = _build_parent_map(tree)
 
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
@@ -242,40 +185,12 @@ def analyze_python_file(path: Path, root: Path) -> _FileFacts:
             facts.entrypoints.append(
                 Entrypoint(kind="script", name="__main__", file=rel, line=node.lineno)
             )
-        elif isinstance(node, ast.Call):
-            dotted = _attr_dotted(node.func)
-            if not dotted:
-                continue
-            for target, (kind, provider) in _CALL_TARGETS.items():
-                if _ends_with(dotted, target):
-                    model = _literal_kwarg(node, "model")
-                    facts.operations.append(
-                        Operation(
-                            kind=kind,
-                            provider=provider,
-                            model=model,
-                            file=rel,
-                            line=node.lineno,
-                            snippet=_snippet(lines, node.lineno),
-                            enclosing_function=_enclosing_function(node, parents),
-                            prev_comment=_prev_comment(lines, node.lineno),
-                            return_var=_return_var(node, parents),
-                        )
-                    )
-                    break
-            http = _infer_http_call(node)
-            if http is not None:
-                method, lib = http
-                facts.external_calls.append(
-                    ExternalCall(
-                        url=_url_arg(node),
-                        method=method,
-                        library=lib,
-                        file=rel,
-                        line=node.lineno,
-                    )
-                )
 
+    if include_llm:
+        from app.scanner.extractors.llm_calls import analyze_repo
+        from app.scanner.py_index import RepoIndex
+
+        facts.operations.extend(analyze_repo(RepoIndex.build(root, [path])))
     return facts
 
 

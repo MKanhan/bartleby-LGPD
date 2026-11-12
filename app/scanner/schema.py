@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -14,13 +16,15 @@ class Entrypoint(BaseModel):
 
 
 class Operation(BaseModel):
-    kind: str  # invoke_llm | embed | tool_call | vector_store_write | vector_store_read | memory_persist | telemetry | external_call
+    kind: str  # invoke_llm | embed | tool_call | vector_store_* | memory_persist | telemetry | datastore | external_call
     provider: str | None = None
     model: str | None = None
     file: str
     line: int
     snippet: str = ""
-    extra: dict[str, str] = Field(default_factory=dict)
+    # Spec 65: also carries provider_origin / model_origin / model_padrao / via / store /
+    # contexto (teste|exemplo|docs) and lists such as uses — hence Any.
+    extra: dict[str, Any] = Field(default_factory=dict)
     # Sprint 23: local context used by operation_classifier to produce a
     # semantic label instead of a generic SDK-based one. All optional so
     # ScanResult JSON written pre-S23 still loads cleanly.
